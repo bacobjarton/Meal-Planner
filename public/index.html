@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Meal Planner</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ── Toast ───────────────────────────────────────────────── -->
+  <div id="toast-container" aria-live="polite"></div>
+
+  <header class="site-header no-print">
+    <div class="header-inner">
+      <div class="header-logo">
+        <span class="logo-icon">🥗</span>
+        <div>
+          <h1>Meal Planner</h1>
+          <p class="header-tags">High-Protein &nbsp;·&nbsp; Dairy-Free &nbsp;·&nbsp; Kosher</p>
+        </div>
+      </div>
+      <button class="btn-history" id="history-toggle-btn" hidden>
+        📋 <span id="history-count-label">Saved Plans</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="main-content">
+
+    <!-- ── Saved Plans Drawer ──────────────────────────────────── -->
+    <section class="history-drawer" id="history-drawer" hidden>
+      <div class="history-header">
+        <span class="history-title">📋 Saved Plans</span>
+        <button class="btn-clear-history" id="clear-history-btn">Clear All</button>
+      </div>
+      <div class="history-list" id="history-list"></div>
+    </section>
+
+    <!-- ── Config Panel ────────────────────────────────────────── -->
+    <section class="card config-card no-print" id="config-section">
+      <h2 class="section-title">Build Your Plan</h2>
+
+      <div class="config-grid">
+
+        <div class="field-group">
+          <label class="field-label" for="days-input">Number of Days</label>
+          <div class="days-control">
+            <button class="days-btn" id="days-minus" aria-label="Decrease days">−</button>
+            <span class="days-display" id="days-display">7</span>
+            <button class="days-btn" id="days-plus" aria-label="Increase days">+</button>
+          </div>
+          <input type="hidden" id="days-input" value="7" />
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">Meals Per Day</label>
+          <div class="meal-options">
+
+            <div class="meal-option-row">
+              <label class="meal-check">
+                <input type="checkbox" name="meals" value="breakfast" checked />
+                <span class="check-box"></span>
+                <span class="check-label">🍳 Breakfast</span>
+              </label>
+              <label class="batch-toggle" id="batch-row-breakfast">
+                <input type="checkbox" name="batch" value="breakfast" class="batch-input" />
+                <span class="batch-icon">↻</span>
+                <span class="batch-text">Batch cook</span>
+              </label>
+            </div>
+
+            <div class="meal-option-row">
+              <label class="meal-check">
+                <input type="checkbox" name="meals" value="lunch" checked />
+                <span class="check-box"></span>
+                <span class="check-label">🥙 Lunch</span>
+              </label>
+              <label class="batch-toggle" id="batch-row-lunch">
+                <input type="checkbox" name="batch" value="lunch" class="batch-input" />
+                <span class="batch-icon">↻</span>
+                <span class="batch-text">Batch cook</span>
+              </label>
+            </div>
+
+            <div class="meal-option-row">
+              <label class="meal-check">
+                <input type="checkbox" name="meals" value="dinner" checked />
+                <span class="check-box"></span>
+                <span class="check-label">🍽️ Dinner</span>
+              </label>
+              <label class="batch-toggle" id="batch-row-dinner">
+                <input type="checkbox" name="batch" value="dinner" class="batch-input" />
+                <span class="batch-icon">↻</span>
+                <span class="batch-text">Batch cook</span>
+              </label>
+            </div>
+
+            <div class="meal-option-row">
+              <label class="meal-check">
+                <input type="checkbox" name="meals" value="snacks" />
+                <span class="check-box"></span>
+                <span class="check-label">🍎 Snacks</span>
+              </label>
+              <label class="batch-toggle batch-toggle--disabled" id="batch-row-snacks">
+                <input type="checkbox" name="batch" value="snacks" class="batch-input" disabled />
+                <span class="batch-icon">↻</span>
+                <span class="batch-text">Batch cook</span>
+              </label>
+            </div>
+
+          </div>
+        </div>
+
+        <div class="field-group field-group--wide">
+          <label class="field-label" for="notes-input">Notes &amp; Preferences</label>
+          <textarea
+            id="notes-input"
+            class="notes-textarea"
+            rows="3"
+            placeholder="e.g. avoid tree nuts, love Asian flavors, prefer quick prep meals, training for a marathon..."
+          ></textarea>
+          <p class="field-hint">Ingredients to avoid, cuisine preferences, time constraints, goals, etc.</p>
+        </div>
+
+      </div>
+
+      <div class="generate-row">
+        <button class="btn-generate" id="generate-btn">
+          <span class="btn-text">Generate Meal Plan</span>
+          <span class="btn-icon">→</span>
+        </button>
+      </div>
+
+      <div class="constraints-notice">
+        <span class="notice-icon">✓</span>
+        Always applied: <strong>high-protein</strong>, <strong>dairy-free</strong>, <strong>kosher</strong>
+      </div>
+    </section>
+
+    <!-- ── Loading ─────────────────────────────────────────────── -->
+    <section class="loading-section" id="loading-section" hidden>
+      <div class="spinner"></div>
+      <p class="loading-text" id="loading-text">Crafting your personalized meal plan…</p>
+    </section>
+
+    <!-- ── Error ───────────────────────────────────────────────── -->
+    <section class="error-section" id="error-section" hidden>
+      <div class="error-card">
+        <span class="error-icon">⚠️</span>
+        <p class="error-message" id="error-message"></p>
+        <button class="btn-secondary" id="error-retry-btn">Try Again</button>
+      </div>
+    </section>
+
+    <!-- ── Results ─────────────────────────────────────────────── -->
+    <section id="results-section" hidden>
+
+      <div class="results-header no-print">
+        <h2 class="results-title" id="results-title">Your Meal Plan</h2>
+        <div class="results-actions">
+          <button class="btn-secondary" id="print-btn">🖨 Print</button>
+          <button class="btn-secondary" id="regenerate-btn">↺ Regenerate</button>
+        </div>
+      </div>
+
+      <div class="print-header print-only">
+        <h1>Meal Plan</h1>
+        <p class="print-tags">High-Protein · Dairy-Free · Kosher</p>
+      </div>
+
+      <div class="summary-bar" id="summary-bar"></div>
+      <div id="meal-plan-container"></div>
+
+      <!-- Shopping List -->
+      <div class="card shopping-card" id="shopping-list-container">
+        <h2 class="section-title">🛒 Shopping List</h2>
+        <div class="shopping-grid" id="shopping-grid"></div>
+
+        <!-- AnyList + Copy row -->
+        <div class="shopping-actions no-print" id="shopping-actions">
+          <button class="btn-anylist" id="anylist-btn" hidden>
+            <span class="anylist-icon">📱</span>
+            <span>Send to AnyList</span>
+            <span class="anylist-list-name" id="anylist-list-name"></span>
+          </button>
+          <span class="anylist-not-configured" id="anylist-not-configured" hidden>
+            💡 Add AnyList credentials to <code>.env</code> to enable direct sending
+          </span>
+          <button class="btn-copy-list" id="copy-list-btn">📋 Copy List</button>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <footer class="site-footer no-print">
+    <p>Generated by Claude AI &nbsp;·&nbsp; Always verify nutritional info with a registered dietitian</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
