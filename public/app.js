@@ -1,11 +1,11 @@
 'use strict';
 
 // ── Constants ─────────────────────────────────────────────────
-const MIN_DAYS      = 1;
-const MAX_DAYS      = 7;
-const HISTORY_KEY   = 'mealplanner_history';
-const RECIPES_KEY   = 'mealplanner_recipes';
-const MAX_HISTORY   = 10;
+const MIN_DAYS    = 1;
+const MAX_DAYS    = 7;
+const HISTORY_KEY = 'mealplanner_history';
+const RECIPES_KEY = 'mealplanner_recipes';
+const MAX_HISTORY = 10;
 
 // ── State ─────────────────────────────────────────────────────
 let currentDays       = 7;
@@ -17,48 +17,67 @@ let anylistListName   = 'Groceries';
 const mealDataMap = new Map();
 
 // ── DOM refs ──────────────────────────────────────────────────
-const daysDisplay       = document.getElementById('days-display');
-const daysInput         = document.getElementById('days-input');
-const daysMinus         = document.getElementById('days-minus');
-const daysPlus          = document.getElementById('days-plus');
-const generateBtn       = document.getElementById('generate-btn');
-const notesInput        = document.getElementById('notes-input');
-const configSection     = document.getElementById('config-section');
-const loadingSection    = document.getElementById('loading-section');
-const loadingText       = document.getElementById('loading-text');
-const errorSection      = document.getElementById('error-section');
-const errorMessage      = document.getElementById('error-message');
-const errorRetryBtn     = document.getElementById('error-retry-btn');
-const resultsSection    = document.getElementById('results-section');
-const mealPlanContainer = document.getElementById('meal-plan-container');
-const summaryBar        = document.getElementById('summary-bar');
-const shoppingGrid      = document.getElementById('shopping-grid');
-const printBtn          = document.getElementById('print-btn');
-const regenerateBtn     = document.getElementById('regenerate-btn');
-const anylistBtn        = document.getElementById('anylist-btn');
-const anylistListNameEl = document.getElementById('anylist-list-name');
-const anylistNotConfigEl= document.getElementById('anylist-not-configured');
-const copyListBtn       = document.getElementById('copy-list-btn');
-// History
-const historyToggleBtn  = document.getElementById('history-toggle-btn');
-const historyDrawer     = document.getElementById('history-drawer');
-const historyList       = document.getElementById('history-list');
-const historyCountLabel = document.getElementById('history-count-label');
-const clearHistoryBtn   = document.getElementById('clear-history-btn');
+const daysDisplay          = document.getElementById('days-display');
+const daysInput            = document.getElementById('days-input');
+const daysMinus            = document.getElementById('days-minus');
+const daysPlus             = document.getElementById('days-plus');
+const generateBtn          = document.getElementById('generate-btn');
+const notesInput           = document.getElementById('notes-input');
+const loadingSection       = document.getElementById('loading-section');
+const loadingText          = document.getElementById('loading-text');
+const errorSection         = document.getElementById('error-section');
+const errorMessage         = document.getElementById('error-message');
+const errorRetryBtn        = document.getElementById('error-retry-btn');
+const resultsSection       = document.getElementById('results-section');
+const planEmptyState       = document.getElementById('plan-empty-state');
+const mealPlanContainer    = document.getElementById('meal-plan-container');
+const summaryBar           = document.getElementById('summary-bar');
+const shoppingGrid         = document.getElementById('shopping-grid');
+const printBtn             = document.getElementById('print-btn');
+const regenerateBtn        = document.getElementById('regenerate-btn');
+const anylistBtn           = document.getElementById('anylist-btn');
+const anylistListNameEl    = document.getElementById('anylist-list-name');
+const anylistNotConfigEl   = document.getElementById('anylist-not-configured');
+const copyListBtn          = document.getElementById('copy-list-btn');
 // Recipe Book
-const recipesToggleBtn  = document.getElementById('recipes-toggle-btn');
-const recipesDrawer     = document.getElementById('recipes-drawer');
-const recipesList       = document.getElementById('recipes-list');
-const recipesCountLabel = document.getElementById('recipes-count-label');
-const clearRecipesBtn   = document.getElementById('clear-recipes-btn');
+const recipesList          = document.getElementById('recipes-list');
+const recipesEmptyState    = document.getElementById('recipes-empty-state');
+const recipesNavBadge      = document.getElementById('recipes-nav-badge');
+const anylistAllRecipesBtn = document.getElementById('anylist-all-recipes-btn');
+const clearRecipesBtn      = document.getElementById('clear-recipes-btn');
+// History
+const historyList          = document.getElementById('history-list');
+const historyEmptyState    = document.getElementById('history-empty-state');
+const historyNavBadge      = document.getElementById('history-nav-badge');
+const clearHistoryBtn      = document.getElementById('clear-history-btn');
+// Nav
+const planNavBadge         = document.getElementById('plan-nav-badge');
+const goPlannerBtn         = document.getElementById('go-planner-btn');
+
+// ── Page Navigation ───────────────────────────────────────────
+const PAGES = ['planner', 'plan', 'recipes', 'history'];
+
+function showPage(name) {
+  PAGES.forEach(p => {
+    document.getElementById(`page-${p}`).hidden = (p !== name);
+    document.getElementById(`nav-${p}`).classList.toggle('active', p === name);
+  });
+  window.scrollTo(0, 0);
+}
+
+document.querySelectorAll('.nav-tab').forEach(btn => {
+  btn.addEventListener('click', () => showPage(btn.dataset.page));
+});
+
+goPlannerBtn.addEventListener('click', () => showPage('planner'));
 
 // ── Days stepper ──────────────────────────────────────────────
 function updateDays(delta) {
   currentDays = Math.min(MAX_DAYS, Math.max(MIN_DAYS, currentDays + delta));
   daysDisplay.textContent = currentDays;
-  daysInput.value = currentDays;
-  daysMinus.disabled = currentDays === MIN_DAYS;
-  daysPlus.disabled  = currentDays === MAX_DAYS;
+  daysInput.value         = currentDays;
+  daysMinus.disabled      = currentDays === MIN_DAYS;
+  daysPlus.disabled       = currentDays === MAX_DAYS;
 }
 daysMinus.addEventListener('click', () => updateDays(-1));
 daysPlus.addEventListener('click',  () => updateDays(+1));
@@ -87,11 +106,11 @@ const show = el => { el.hidden = false; };
 const hide = el => { el.hidden = true; };
 const getSelectedMeals      = () => [...document.querySelectorAll('input[name="meals"]:checked')].map(e => e.value);
 const getSelectedBatchMeals = () => [...document.querySelectorAll('input[name="batch"]:checked')].map(e => e.value);
-const capitalize = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
-const escHtml = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-const recipeId = (type, name) => `${type}_${(name||'').toLowerCase().replace(/[^a-z0-9]+/g,'-')}`;
+const capitalize  = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
+const escHtml     = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const recipeId    = (type, name) => `${type}_${(name||'').toLowerCase().replace(/[^a-z0-9]+/g,'-')}`;
 
-const MEAL_ICONS      = { breakfast: '🍳', lunch: '🥙', dinner: '🍽️', snacks: '🍎' };
+const MEAL_ICONS      = { breakfast:'🍳', lunch:'🥙', dinner:'🍽️', snacks:'🍎' };
 const CATEGORY_ICONS  = { produce:'🥦', proteins:'🥩', grains_and_legumes:'🌾', pantry_and_spices:'🫙', frozen:'❄️', other:'🛍️' };
 const CATEGORY_LABELS = { produce:'Produce', proteins:'Proteins', grains_and_legumes:'Grains & Legumes', pantry_and_spices:'Pantry & Spices', frozen:'Frozen', other:'Other' };
 const MEAL_ORDER      = ['breakfast', 'lunch', 'dinner', 'snacks'];
@@ -120,6 +139,100 @@ function showToast(msg, type = 'success', duration = 3000) {
   setTimeout(() => el.remove(), duration + 400);
 }
 
+// ── AnyList ───────────────────────────────────────────────────
+async function checkAnyListStatus() {
+  try {
+    const res  = await fetch('/api/anylist-status');
+    const json = await res.json();
+    anylistConfigured = json.configured;
+    anylistListName   = json.listName || 'Groceries';
+  } catch { anylistConfigured = false; }
+}
+
+function updateAnyListUI() {
+  if (anylistConfigured) {
+    show(anylistBtn); hide(anylistNotConfigEl);
+    anylistListNameEl.textContent = anylistListName;
+  } else {
+    hide(anylistBtn); show(anylistNotConfigEl);
+  }
+}
+
+// Send a flat array of ingredient strings to AnyList
+async function sendIngredientsToAnyList(ingredients) {
+  if (!anylistConfigured || !ingredients?.length) return false;
+  try {
+    const res  = await fetch('/api/send-to-anylist', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ shoppingList: { ingredients } }),
+    });
+    const json = await res.json();
+    if (json.success) {
+      showToast(`✓ ${json.count} ingredients added to "${json.listName}"!`, 'success');
+      return true;
+    } else {
+      showToast(json.error || 'Failed to send to AnyList.', 'error');
+      return false;
+    }
+  } catch (err) {
+    showToast(err.message || 'Network error.', 'error');
+    return false;
+  }
+}
+
+// Send plan shopping list
+anylistBtn.addEventListener('click', async () => {
+  if (!currentPlanData?.shopping_list) return;
+  anylistBtn.disabled = true;
+  anylistBtn.querySelector('span:nth-child(2)').textContent = 'Sending…';
+  try {
+    const res  = await fetch('/api/send-to-anylist', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ shoppingList: currentPlanData.shopping_list }),
+    });
+    const json = await res.json();
+    json.success
+      ? showToast(`✓ ${json.count} items added to "${json.listName}"!`, 'success')
+      : showToast(json.error || 'Failed to send to AnyList.', 'error');
+  } catch (err) {
+    showToast(err.message || 'Network error.', 'error');
+  } finally {
+    anylistBtn.disabled = false;
+    anylistBtn.querySelector('span:nth-child(2)').textContent = 'Send to AnyList';
+  }
+});
+
+// Send ALL saved recipe ingredients combined
+anylistAllRecipesBtn.addEventListener('click', async () => {
+  const saved = getSavedRecipes();
+  const allIngredients = saved.flatMap(r => r.ingredients || []);
+  if (!allIngredients.length) { showToast('No ingredients found in saved recipes.', 'info'); return; }
+  anylistAllRecipesBtn.disabled = true;
+  anylistAllRecipesBtn.querySelector('span:last-child').textContent = 'Sending…';
+  await sendIngredientsToAnyList(allIngredients);
+  anylistAllRecipesBtn.disabled = false;
+  anylistAllRecipesBtn.querySelector('span:last-child').textContent = 'Send All to AnyList';
+});
+
+copyListBtn.addEventListener('click', () => {
+  if (!currentPlanData?.shopping_list) return;
+  const text = formatShoppingListAsText(currentPlanData.shopping_list);
+  navigator.clipboard.writeText(text)
+    .then(() => showToast('Shopping list copied to clipboard!', 'success'))
+    .catch(() => showToast('Could not copy — try selecting manually.', 'error'));
+});
+
+function formatShoppingListAsText(list) {
+  const lines = ['🛒 Shopping List\n'];
+  for (const [key, items] of Object.entries(list)) {
+    if (!items?.length) continue;
+    const label = CATEGORY_LABELS[key] || key.replace(/_/g, ' ');
+    lines.push(`\n== ${label.toUpperCase()} ==`);
+    items.forEach(i => lines.push(`- ${i}`));
+  }
+  return lines.join('\n');
+}
+
 // ── Recipe Book ───────────────────────────────────────────────
 function getSavedRecipes() {
   try { return JSON.parse(localStorage.getItem(RECIPES_KEY)) || []; }
@@ -138,8 +251,8 @@ function removeRecipe(id) {
   const saved = getSavedRecipes().filter(r => r.id !== id);
   localStorage.setItem(RECIPES_KEY, JSON.stringify(saved));
   renderRecipeBook();
-  // Update any visible star buttons
-  document.querySelectorAll(`[data-recipe-id="${CSS.escape(id)}"]`).forEach(btn => {
+  // Update any visible star buttons in the meal plan
+  document.querySelectorAll(`[data-recipe-id="${CSS.escape(id)}"].btn-star`).forEach(btn => {
     btn.textContent = '☆';
     btn.classList.remove('starred');
     btn.title = 'Save to Recipe Book';
@@ -148,24 +261,40 @@ function removeRecipe(id) {
 
 function renderRecipeBook() {
   const saved = getSavedRecipes();
+
+  // Nav badge
+  if (saved.length > 0) {
+    show(recipesNavBadge);
+    recipesNavBadge.textContent = saved.length;
+  } else {
+    hide(recipesNavBadge);
+  }
+
+  // "Send All" button — only when AnyList is configured and there are recipes
+  if (anylistConfigured && saved.length > 0) show(anylistAllRecipesBtn);
+  else hide(anylistAllRecipesBtn);
+
   if (!saved.length) {
-    hide(recipesToggleBtn);
-    hide(recipesDrawer);
+    show(recipesEmptyState);
+    recipesList.innerHTML = '';
     return;
   }
-  show(recipesToggleBtn);
-  recipesCountLabel.textContent = `Recipes (${saved.length})`;
+  hide(recipesEmptyState);
 
   recipesList.innerHTML = saved.map(r => {
-    const id    = escHtml(r.id);
-    const type  = r.type || 'breakfast';
+    const id     = escHtml(r.id);
+    const type   = r.type || 'breakfast';
     const macros = r.macros || {};
     const macroPills = [
-      macros.calories != null ? `<span class="macro-pill cal">${macros.calories} kcal</span>` : '',
+      macros.calories != null ? `<span class="macro-pill cal">${macros.calories} kcal</span>`   : '',
       macros.protein  != null ? `<span class="macro-pill pro">${macros.protein}g protein</span>` : '',
-      macros.carbs    != null ? `<span class="macro-pill carbs">${macros.carbs}g carbs</span>` : '',
-      macros.fat      != null ? `<span class="macro-pill fat">${macros.fat}g fat</span>` : '',
+      macros.carbs    != null ? `<span class="macro-pill carbs">${macros.carbs}g carbs</span>`   : '',
+      macros.fat      != null ? `<span class="macro-pill fat">${macros.fat}g fat</span>`         : '',
     ].filter(Boolean).join('');
+
+    const anylistBtnHtml = anylistConfigured && (r.ingredients?.length > 0)
+      ? `<button class="btn-anylist-recipe" data-recipe-id="${id}" title="Send ingredients to AnyList">📱</button>`
+      : '';
 
     return `<div class="recipe-book-item">
       <div class="recipe-book-top">
@@ -175,7 +304,8 @@ function renderRecipeBook() {
           ${macroPills ? `<div class="macro-pills" style="margin-top:6px">${macroPills}</div>` : ''}
         </div>
         <div class="recipe-book-actions">
-          <button class="btn-print-recipe" data-recipe-id="${id}">🖨 Print</button>
+          ${anylistBtnHtml}
+          <button class="btn-print-recipe" data-recipe-id="${id}" title="Print recipe">🖨</button>
           <button class="btn-remove-recipe" data-recipe-id="${id}" title="Remove">✕</button>
         </div>
       </div>
@@ -183,13 +313,32 @@ function renderRecipeBook() {
     </div>`;
   }).join('');
 
+  // Attach event handlers
   recipesList.querySelectorAll('.btn-print-recipe').forEach(btn =>
     btn.addEventListener('click', () => printSingleRecipe(btn.dataset.recipeId))
   );
   recipesList.querySelectorAll('.btn-remove-recipe').forEach(btn =>
     btn.addEventListener('click', () => removeRecipe(btn.dataset.recipeId))
   );
+  recipesList.querySelectorAll('.btn-anylist-recipe').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const recipe = getSavedRecipes().find(r => r.id === btn.dataset.recipeId);
+      if (!recipe?.ingredients?.length) { showToast('No ingredients saved for this recipe.', 'info'); return; }
+      btn.disabled = true;
+      const orig = btn.textContent;
+      btn.textContent = '⏳';
+      await sendIngredientsToAnyList(recipe.ingredients);
+      btn.disabled = false;
+      btn.textContent = orig;
+    });
+  });
 }
+
+clearRecipesBtn.addEventListener('click', () => {
+  if (!confirm('Clear all saved recipes?')) return;
+  localStorage.removeItem(RECIPES_KEY);
+  renderRecipeBook();
+});
 
 function printSingleRecipe(id) {
   const recipe = getSavedRecipes().find(r => r.id === id);
@@ -198,15 +347,12 @@ function printSingleRecipe(id) {
   if (!win) { showToast('Pop-up blocked — allow pop-ups to print.', 'error'); return; }
   win.document.write(buildRecipePrintHTML(recipe));
   win.document.close();
-  win.addEventListener('load', () => { win.print(); });
+  win.addEventListener('load', () => win.print());
 }
 
 function buildRecipePrintHTML(r) {
-  const cap = capitalize;
-  const esc = escHtml;
-  const type = r.type || 'meal';
-  const macros = r.macros || {};
-  const ingHtml  = (r.ingredients||[]).map(i => `<li>${esc(i)}</li>`).join('');
+  const cap = capitalize, esc = escHtml, type = r.type || 'meal', macros = r.macros || {};
+  const ingHtml  = (r.ingredients ||[]).map(i => `<li>${esc(i)}</li>`).join('');
   const instHtml = (r.instructions||[]).map(s => `<li>${esc(s)}</li>`).join('');
   const batchHtml = r.batch_info ? `
     <h3>Batch Cooking</h3>
@@ -226,7 +372,7 @@ function buildRecipePrintHTML(r) {
     .meta { font-size: .82rem; color: #666; }
     .macros { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0; }
     .macro { background: #f3f3f3; border: 1px solid #ddd; padding: 4px 11px; border-radius: 50px; font-size: .78rem; font-weight: 600; }
-    h3 { font-size: .95rem; font-weight: 700; color: #2D6A4F; margin: 18px 0 8px; text-transform: uppercase; letter-spacing: .4px; font-size: .8rem; }
+    h3 { font-weight: 700; color: #2D6A4F; margin: 18px 0 8px; text-transform: uppercase; letter-spacing: .4px; font-size: .8rem; }
     ul, ol { padding-left: 20px; }
     li { margin-bottom: 5px; font-size: .9rem; }
     .batch-box { background: #CCFBF1; border: 1px solid #99f6e4; border-radius: 8px; padding: 12px 14px; margin-top: 18px; font-size: .85rem; }
@@ -247,27 +393,13 @@ function buildRecipePrintHTML(r) {
     ${macros.carbs    != null ? `<span class="macro">${macros.carbs}g carbs</span>` : ''}
     ${macros.fat      != null ? `<span class="macro">${macros.fat}g fat</span>` : ''}
   </div>
-  ${ingHtml  ? `<h3>Ingredients</h3><ul>${ingHtml}</ul>` : ''}
+  ${ingHtml  ? `<h3>Ingredients</h3><ul>${ingHtml}</ul>`   : ''}
   ${instHtml ? `<h3>Instructions</h3><ol>${instHtml}</ol>` : ''}
   ${r.batch_info ? `<div class="batch-box">${batchHtml}</div>` : ''}
   <footer>Generated by AI Meal Planner · Verify nutritional info with a registered dietitian</footer>
 </body>
 </html>`;
 }
-
-// Recipe Book toggle
-recipesToggleBtn.addEventListener('click', () => {
-  const isOpen = !recipesDrawer.hidden;
-  recipesDrawer.hidden = isOpen;
-  recipesToggleBtn.classList.toggle('active', !isOpen);
-  // Close history if open
-  if (!isOpen) { historyDrawer.hidden = true; historyToggleBtn.classList.remove('active'); }
-});
-clearRecipesBtn.addEventListener('click', () => {
-  if (!confirm('Clear all saved recipes?')) return;
-  localStorage.removeItem(RECIPES_KEY);
-  renderRecipeBook();
-});
 
 // ── History ───────────────────────────────────────────────────
 function getHistory() {
@@ -277,7 +409,7 @@ function getHistory() {
 
 function saveToHistory(data, config) {
   const history = getHistory();
-  const entry = { id: `plan_${Date.now()}`, savedAt: Date.now(), config, summary: data.plan_summary || {}, data };
+  const entry = { id:`plan_${Date.now()}`, savedAt:Date.now(), config, summary:data.plan_summary||{}, data };
   history.unshift(entry);
   if (history.length > MAX_HISTORY) history.length = MAX_HISTORY;
   localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
@@ -291,9 +423,21 @@ function deleteFromHistory(id) {
 
 function renderHistoryPanel() {
   const history = getHistory();
-  if (!history.length) { hide(historyToggleBtn); hide(historyDrawer); return; }
-  show(historyToggleBtn);
-  historyCountLabel.textContent = `Plans (${history.length})`;
+
+  // Nav badge
+  if (history.length > 0) {
+    show(historyNavBadge);
+    historyNavBadge.textContent = history.length;
+  } else {
+    hide(historyNavBadge);
+  }
+
+  if (!history.length) {
+    show(historyEmptyState);
+    historyList.innerHTML = '';
+    return;
+  }
+  hide(historyEmptyState);
 
   historyList.innerHTML = history.map(entry => {
     const d       = new Date(entry.savedAt);
@@ -311,7 +455,7 @@ function renderHistoryPanel() {
         ${statsStr ? `<div class="history-stats">Avg: ${escHtml(statsStr)}/day</div>` : ''}
       </div>
       <div class="history-actions">
-        <button class="btn-load-plan"  data-id="${escHtml(entry.id)}">Load</button>
+        <button class="btn-load-plan"   data-id="${escHtml(entry.id)}">Load</button>
         <button class="btn-delete-plan" data-id="${escHtml(entry.id)}">✕</button>
       </div>
     </div>`;
@@ -341,82 +485,19 @@ function loadPlanFromHistory(entry) {
   if (cfg.notes !== undefined) notesInput.value = cfg.notes;
   currentPlanData = entry.data;
   renderResults(entry.data);
+  hide(planEmptyState);
   hide(errorSection);
   show(resultsSection);
-  resultsSection.scrollIntoView({ behavior:'smooth', block:'start' });
+  show(planNavBadge);
+  showPage('plan');
   showToast('Plan loaded from history.', 'info');
 }
 
-historyToggleBtn.addEventListener('click', () => {
-  const isOpen = !historyDrawer.hidden;
-  historyDrawer.hidden = isOpen;
-  historyToggleBtn.classList.toggle('active', !isOpen);
-  if (!isOpen) { recipesDrawer.hidden = true; recipesToggleBtn.classList.remove('active'); }
-});
 clearHistoryBtn.addEventListener('click', () => {
   if (!confirm('Clear all saved plans?')) return;
   localStorage.removeItem(HISTORY_KEY);
   renderHistoryPanel();
 });
-
-// ── AnyList ───────────────────────────────────────────────────
-async function checkAnyListStatus() {
-  try {
-    const res  = await fetch('/api/anylist-status');
-    const json = await res.json();
-    anylistConfigured = json.configured;
-    anylistListName   = json.listName || 'Groceries';
-  } catch { anylistConfigured = false; }
-}
-
-function updateAnyListUI() {
-  if (anylistConfigured) {
-    show(anylistBtn); hide(anylistNotConfigEl);
-    anylistListNameEl.textContent = anylistListName;
-  } else {
-    hide(anylistBtn); show(anylistNotConfigEl);
-  }
-}
-
-anylistBtn.addEventListener('click', async () => {
-  if (!currentPlanData?.shopping_list) return;
-  anylistBtn.disabled = true;
-  anylistBtn.querySelector('span:nth-child(2)').textContent = 'Sending…';
-  try {
-    const res  = await fetch('/api/send-to-anylist', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ shoppingList: currentPlanData.shopping_list }),
-    });
-    const json = await res.json();
-    json.success
-      ? showToast(`✓ ${json.count} items added to "${json.listName}"!`, 'success')
-      : showToast(json.error || 'Failed to send to AnyList.', 'error');
-  } catch (err) {
-    showToast(err.message || 'Network error.', 'error');
-  } finally {
-    anylistBtn.disabled = false;
-    anylistBtn.querySelector('span:nth-child(2)').textContent = 'Send to AnyList';
-  }
-});
-
-copyListBtn.addEventListener('click', () => {
-  if (!currentPlanData?.shopping_list) return;
-  const text = formatShoppingListAsText(currentPlanData.shopping_list);
-  navigator.clipboard.writeText(text)
-    .then(() => showToast('Shopping list copied to clipboard!', 'success'))
-    .catch(() => showToast('Could not copy — try selecting manually.', 'error'));
-});
-
-function formatShoppingListAsText(list) {
-  const lines = ['🛒 Shopping List\n'];
-  for (const [key, items] of Object.entries(list)) {
-    if (!items?.length) continue;
-    const label = CATEGORY_LABELS[key] || key.replace(/_/g, ' ');
-    lines.push(`\n== ${label.toUpperCase()} ==`);
-    items.forEach(i => lines.push(`- ${i}`));
-  }
-  return lines.join('\n');
-}
 
 // ── Rendering ─────────────────────────────────────────────────
 function renderMacroPills(macros) {
@@ -430,9 +511,9 @@ function renderMacroPills(macros) {
 }
 
 function renderRecipeDetails(meal) {
-  const ing   = meal.ingredients  || [];
-  const inst  = meal.instructions || [];
-  const bi    = meal.batch_info;
+  const ing  = meal.ingredients  || [];
+  const inst = meal.instructions || [];
+  const bi   = meal.batch_info;
   if (!ing.length && !inst.length && !bi) return '';
   const ingHtml  = ing.length  ? `<div><div class="recipe-section-title">Ingredients</div><ul class="ingredients-list">${ing.map(i=>`<li>${escHtml(String(i))}</li>`).join('')}</ul></div>` : '';
   const instHtml = inst.length ? `<div><div class="recipe-section-title">Instructions</div><ol class="instructions-list">${inst.map(s=>`<li>${escHtml(String(s))}</li>`).join('')}</ol></div>` : '';
@@ -442,8 +523,8 @@ function renderRecipeDetails(meal) {
 
 function renderMealCard(type, meal) {
   if (!meal) return '';
-  const id      = recipeId(type, meal.name);
-  const saved   = isRecipeSaved(id);
+  const id    = recipeId(type, meal.name);
+  const saved = isRecipeSaved(id);
   mealDataMap.set(id, { type, meal });
   return `<div class="meal-card">
     <div class="meal-card-top">
@@ -476,7 +557,7 @@ function renderDay(dayObj) {
   </div>`;
 }
 
-// Star button event delegation
+// Star button — event delegation on meal plan container
 mealPlanContainer.addEventListener('click', e => {
   const btn = e.target.closest('.btn-star');
   if (!btn) return;
@@ -489,20 +570,12 @@ mealPlanContainer.addEventListener('click', e => {
     showToast('Removed from Recipe Book.', 'info');
   } else {
     const data = mealDataMap.get(id);
-    if (data) { saveRecipe(id, data.type, data.meal); }
+    if (data) saveRecipe(id, data.type, data.meal);
     btn.textContent = '★';
     btn.classList.add('starred');
     btn.title = 'Remove from Recipe Book';
     showToast('Saved to Recipe Book! ⭐', 'success');
   }
-});
-
-// Also allow starring from Recipe Book drawer cards rendered in the plan
-recipesList.addEventListener('click', e => {
-  const btn = e.target.closest('.btn-star');
-  if (!btn) return;
-  const id = btn.dataset.recipeId;
-  removeRecipe(id);
 });
 
 function renderSummaryBar(summary) {
@@ -521,7 +594,7 @@ function renderSummaryBar(summary) {
 
 function renderShoppingList(list) {
   shoppingGrid.innerHTML = '';
-  if (!list || typeof list!=='object') return;
+  if (!list || typeof list !== 'object') return;
   const ORDER = ['produce','proteins','grains_and_legumes','pantry_and_spices','frozen','other'];
   const keys  = [...new Set([...ORDER,...Object.keys(list)])].filter(k=>list[k]?.length);
   if (!keys.length) { shoppingGrid.innerHTML='<p style="color:var(--text-muted)">No shopping list generated.</p>'; return; }
@@ -556,25 +629,31 @@ async function generate() {
   const batchMeals = getSelectedBatchMeals();
   if (!meals.length) { alert('Please select at least one meal type.'); return; }
 
-  hide(errorSection); hide(resultsSection); show(loadingSection);
+  // Switch to Plan page and show loading state
+  showPage('plan');
+  hide(planEmptyState);
+  hide(errorSection);
+  hide(resultsSection);
+  show(loadingSection);
   generateBtn.disabled    = true;
   loadingText.textContent = LOADING_MSGS[0];
   const msgTimer = cycleLoadingMessages();
 
   try {
     const res  = await fetch('/api/generate', {
-      method:'POST', headers:{'Content-Type':'application/json'},
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ days:currentDays, meals, notes:notesInput.value, batchMeals }),
     });
     const json = await res.json();
     clearInterval(msgTimer);
-    if (!json.success) throw new Error(json.error||'Unknown error');
+    if (!json.success) throw new Error(json.error || 'Unknown error');
 
     currentPlanData = json.data;
     saveToHistory(json.data, { days:currentDays, meals, batch:batchMeals, notes:notesInput.value });
     renderResults(json.data);
-    hide(loadingSection); show(resultsSection);
-    resultsSection.scrollIntoView({ behavior:'smooth', block:'start' });
+    hide(loadingSection);
+    show(resultsSection);
+    show(planNavBadge);
 
   } catch (err) {
     clearInterval(msgTimer);
@@ -589,14 +668,15 @@ async function generate() {
 // ── Events ────────────────────────────────────────────────────
 generateBtn.addEventListener('click', generate);
 errorRetryBtn.addEventListener('click', () => { hide(errorSection); generate(); });
-regenerateBtn.addEventListener('click', () => {
-  hide(resultsSection); hide(errorSection);
-  configSection.scrollIntoView({ behavior:'smooth', block:'start' });
-});
+regenerateBtn.addEventListener('click', () => showPage('planner'));
 printBtn.addEventListener('click', () => window.print());
 
 // ── Init ──────────────────────────────────────────────────────
-updateDays(0);
-checkAnyListStatus().then(updateAnyListUI);
-renderHistoryPanel();
-renderRecipeBook();
+async function init() {
+  updateDays(0);
+  await checkAnyListStatus();  // wait so recipe book AnyList buttons render correctly
+  updateAnyListUI();
+  renderHistoryPanel();
+  renderRecipeBook();
+}
+init();
