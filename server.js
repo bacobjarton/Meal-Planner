@@ -3,6 +3,7 @@ const express  = require('express');
 const Anthropic = require('@anthropic-ai/sdk');
 const AnyList  = require('anylist');
 const path     = require('path');
+const os       = require('os');
 
 const app = express();
 app.use(express.json());
@@ -185,8 +186,30 @@ function parseItem(str) {
     : { name: str.trim(), quantity: '' };
 }
 
+// ── Serve PNG icons (generated from SVG via redirect) ─────────
+// Browsers that need .png icons get the SVG served as SVG; the
+// manifest also lists the SVG as "any" size so modern browsers use it.
+app.get('/icon-:size.png', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'icon.svg'));
+});
+
 // ── Start server ──────────────────────────────────────────────
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`\n  Meal Planner running → http://localhost:${PORT}\n`);
+function getLocalIP() {
+  for (const ifaces of Object.values(os.networkInterfaces())) {
+    for (const iface of ifaces) {
+      if (iface.family === 'IPv4' && !iface.internal) return iface.address;
+    }
+  }
+  return null;
+}
+
+const PORT     = process.env.PORT || 3000;
+const HOSTNAME = os.hostname();
+app.listen(PORT, '0.0.0.0', () => {
+  const localIP = getLocalIP();
+  console.log(`\n  Meal Planner running:`);
+  console.log(`  Local      → http://localhost:${PORT}`);
+  if (localIP) console.log(`  By IP      → http://${localIP}:${PORT}`);
+  console.log(`  By name    → http://${HOSTNAME}.local:${PORT}  ← use this on your phone (stable)`);
+  console.log(`\n  On iPhone: open the ".local" URL in Safari → Share → Add to Home Screen\n`);
 });

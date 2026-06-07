@@ -2,8 +2,18 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Meal Planner</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#2D6A4F" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Meal Planner" />
+  <link rel="apple-touch-icon" href="/icon.svg" />
+
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -20,21 +30,35 @@
           <p class="header-tags">High-Protein &nbsp;·&nbsp; Dairy-Free &nbsp;·&nbsp; Kosher</p>
         </div>
       </div>
-      <button class="btn-history" id="history-toggle-btn" hidden>
-        📋 <span id="history-count-label">Saved Plans</span>
-      </button>
+      <div class="header-btns">
+        <button class="btn-header-action" id="recipes-toggle-btn" hidden>
+          ⭐ <span id="recipes-count-label">Recipes</span>
+        </button>
+        <button class="btn-header-action" id="history-toggle-btn" hidden>
+          📋 <span id="history-count-label">Plans</span>
+        </button>
+      </div>
     </div>
   </header>
 
   <main class="main-content">
 
-    <!-- ── Saved Plans Drawer ──────────────────────────────────── -->
-    <section class="history-drawer" id="history-drawer" hidden>
-      <div class="history-header">
-        <span class="history-title">📋 Saved Plans</span>
-        <button class="btn-clear-history" id="clear-history-btn">Clear All</button>
+    <!-- ── Recipe Book Drawer ──────────────────────────────────── -->
+    <section class="drawer" id="recipes-drawer" hidden>
+      <div class="drawer-header">
+        <span class="drawer-title">⭐ Recipe Book</span>
+        <button class="btn-clear-drawer" id="clear-recipes-btn">Clear All</button>
       </div>
-      <div class="history-list" id="history-list"></div>
+      <div class="drawer-list" id="recipes-list"></div>
+    </section>
+
+    <!-- ── Saved Plans Drawer ──────────────────────────────────── -->
+    <section class="drawer" id="history-drawer" hidden>
+      <div class="drawer-header">
+        <span class="drawer-title">📋 Saved Plans</span>
+        <button class="btn-clear-drawer" id="clear-history-btn">Clear All</button>
+      </div>
+      <div class="drawer-list" id="history-list"></div>
     </section>
 
     <!-- ── Config Panel ────────────────────────────────────────── -->
@@ -172,12 +196,9 @@
       <div class="summary-bar" id="summary-bar"></div>
       <div id="meal-plan-container"></div>
 
-      <!-- Shopping List -->
       <div class="card shopping-card" id="shopping-list-container">
         <h2 class="section-title">🛒 Shopping List</h2>
         <div class="shopping-grid" id="shopping-grid"></div>
-
-        <!-- AnyList + Copy row -->
         <div class="shopping-actions no-print" id="shopping-actions">
           <button class="btn-anylist" id="anylist-btn" hidden>
             <span class="anylist-icon">📱</span>
@@ -200,5 +221,10 @@
   </footer>
 
   <script src="app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
+  </script>
 </body>
 </html>
