@@ -1,4 +1,4 @@
-const CACHE_NAME   = 'meal-planner-v2';
+const CACHE_NAME   = 'meal-planner-v3';
 const OFFLINE_URL  = '/offline.html';
 const STATIC_ASSETS = ['/', '/index.html', '/style.css', '/app.js', '/icon.svg', '/manifest.json', OFFLINE_URL];
 
@@ -42,22 +42,20 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // For static assets: cache-first, fall back to network
+  // For static assets: network-first so updates deploy immediately,
+  // fall back to cache when offline
   event.respondWith(
-    caches.match(event.request).then(cached => {
+    fetch(event.request).then(response => {
+      if (response && response.ok && event.request.method === 'GET') {
+        const clone = response.clone();
+        caches.open(CACHE_NAME).then(c => c.put(event.request, clone));
+      }
+      return response;
+    }).catch(() => caches.match(event.request).then(cached => {
       if (cached) return cached;
-      return fetch(event.request).then(response => {
-        if (response && response.ok && event.request.method === 'GET') {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then(c => c.put(event.request, clone));
-        }
-        return response;
-      }).catch(() => {
-        // Return offline page for HTML requests
-        if (event.request.headers.get('accept')?.includes('text/html')) {
-          return caches.match(OFFLINE_URL);
-        }
-      });
-    })
+      if (event.request.headers.get('accept')?.includes('text/html')) {
+        return caches.match(OFFLINE_URL);
+      }
+    }))
   );
 });
