@@ -152,8 +152,8 @@ async function loadServerData() {
       apiFetch('/api/recipes'),
       apiFetch('/api/history'),
     ]);
-    savedRecipes = Array.isArray(recipes) ? recipes : [];
-    planHistory  = Array.isArray(history) ? history : [];
+    savedRecipes = Array.isArray(recipesRes) ? recipesRes : [];
+    planHistory  = Array.isArray(historyRes) ? historyRes : [];
   } catch {
     savedRecipes = [];
     planHistory  = [];
