@@ -1,17 +1,18 @@
 'use strict';
 
 // ── Constants ─────────────────────────────────────────────────
-const MIN_DAYS    = 1;
-const MAX_DAYS    = 7;
-const HISTORY_KEY = 'mealplanner_history';
-const RECIPES_KEY = 'mealplanner_recipes';
-const MAX_HISTORY = 10;
+const MIN_DAYS = 1;
+const MAX_DAYS = 7;
 
 // ── State ─────────────────────────────────────────────────────
 let currentDays       = 7;
 let currentPlanData   = null;
 let anylistConfigured = false;
 let anylistListName   = 'Groceries';
+
+// Synced from server on load, kept in memory for sync reads
+let savedRecipes = [];
+let planHistory  = [];
 
 // Temp map populated each render so star handlers can access meal data
 const mealDataMap = new Map();
@@ -68,7 +69,6 @@ function showPage(name) {
 document.querySelectorAll('.nav-tab').forEach(btn => {
   btn.addEventListener('click', () => showPage(btn.dataset.page));
 });
-
 goPlannerBtn.addEventListener('click', () => showPage('planner'));
 
 // ── Days stepper ──────────────────────────────────────────────
@@ -139,11 +139,31 @@ function showToast(msg, type = 'success', duration = 3000) {
   setTimeout(() => el.remove(), duration + 400);
 }
 
+// ── Server data helpers ───────────────────────────────────────
+async function apiFetch(url, options = {}) {
+  const res = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...options });
+  if (!res.ok) throw new Error(`Server error ${res.status}`);
+  return res.json();
+}
+
+async function loadServerData() {
+  try {
+    const [recipes, history] = await Promise.all([
+      apiFetch('/api/recipes'),
+      apiFetch('/api/history'),
+    ]);
+    savedRecipes = Array.isArray(recipes) ? recipes : [];
+    planHistory  = Array.isArray(history) ? history : [];
+  } catch {
+    savedRecipes = [];
+    planHistory  = [];
+  }
+}
+
 // ── AnyList ───────────────────────────────────────────────────
 async function checkAnyListStatus() {
   try {
-    const res  = await fetch('/api/anylist-status');
-    const json = await res.json();
+    const json = await apiFetch('/api/anylist-status');
     anylistConfigured = json.configured;
     anylistListName   = json.listName || 'Groceries';
   } catch { anylistConfigured = false; }
@@ -158,54 +178,39 @@ function updateAnyListUI() {
   }
 }
 
-// Send a flat array of ingredient strings to AnyList
 async function sendIngredientsToAnyList(ingredients) {
   if (!anylistConfigured || !ingredients?.length) return false;
   try {
-    const res  = await fetch('/api/send-to-anylist', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+    const json = await apiFetch('/api/send-to-anylist', {
+      method: 'POST',
       body: JSON.stringify({ shoppingList: { ingredients } }),
     });
-    const json = await res.json();
-    if (json.success) {
-      showToast(`✓ ${json.count} ingredients added to "${json.listName}"!`, 'success');
-      return true;
-    } else {
-      showToast(json.error || 'Failed to send to AnyList.', 'error');
-      return false;
-    }
-  } catch (err) {
-    showToast(err.message || 'Network error.', 'error');
-    return false;
-  }
+    if (json.success) { showToast(`✓ ${json.count} ingredients added to "${json.listName}"!`, 'success'); return true; }
+    showToast(json.error || 'Failed to send to AnyList.', 'error'); return false;
+  } catch (err) { showToast(err.message || 'Network error.', 'error'); return false; }
 }
 
-// Send plan shopping list
 anylistBtn.addEventListener('click', async () => {
   if (!currentPlanData?.shopping_list) return;
   anylistBtn.disabled = true;
   anylistBtn.querySelector('span:nth-child(2)').textContent = 'Sending…';
   try {
-    const res  = await fetch('/api/send-to-anylist', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+    const json = await apiFetch('/api/send-to-anylist', {
+      method: 'POST',
       body: JSON.stringify({ shoppingList: currentPlanData.shopping_list }),
     });
-    const json = await res.json();
     json.success
       ? showToast(`✓ ${json.count} items added to "${json.listName}"!`, 'success')
       : showToast(json.error || 'Failed to send to AnyList.', 'error');
-  } catch (err) {
-    showToast(err.message || 'Network error.', 'error');
-  } finally {
+  } catch (err) { showToast(err.message || 'Network error.', 'error'); }
+  finally {
     anylistBtn.disabled = false;
     anylistBtn.querySelector('span:nth-child(2)').textContent = 'Send to AnyList';
   }
 });
 
-// Send ALL saved recipe ingredients combined
 anylistAllRecipesBtn.addEventListener('click', async () => {
-  const saved = getSavedRecipes();
-  const allIngredients = saved.flatMap(r => r.ingredients || []);
+  const allIngredients = savedRecipes.flatMap(r => r.ingredients || []);
   if (!allIngredients.length) { showToast('No ingredients found in saved recipes.', 'info'); return; }
   anylistAllRecipesBtn.disabled = true;
   anylistAllRecipesBtn.querySelector('span:last-child').textContent = 'Sending…';
@@ -216,8 +221,7 @@ anylistAllRecipesBtn.addEventListener('click', async () => {
 
 copyListBtn.addEventListener('click', () => {
   if (!currentPlanData?.shopping_list) return;
-  const text = formatShoppingListAsText(currentPlanData.shopping_list);
-  navigator.clipboard.writeText(text)
+  navigator.clipboard.writeText(formatShoppingListAsText(currentPlanData.shopping_list))
     .then(() => showToast('Shopping list copied to clipboard!', 'success'))
     .catch(() => showToast('Could not copy — try selecting manually.', 'error'));
 });
@@ -234,54 +238,44 @@ function formatShoppingListAsText(list) {
 }
 
 // ── Recipe Book ───────────────────────────────────────────────
-function getSavedRecipes() {
-  try { return JSON.parse(localStorage.getItem(RECIPES_KEY)) || []; }
-  catch { return []; }
-}
-function isRecipeSaved(id) { return getSavedRecipes().some(r => r.id === id); }
+function getSavedRecipes()    { return savedRecipes; }
+function isRecipeSaved(id)    { return savedRecipes.some(r => r.id === id); }
 
-function saveRecipe(id, type, meal) {
-  const saved = getSavedRecipes().filter(r => r.id !== id);
-  saved.unshift({ id, savedAt: Date.now(), type, ...meal });
-  localStorage.setItem(RECIPES_KEY, JSON.stringify(saved));
+async function saveRecipe(id, type, meal) {
+  const entry = { id, savedAt: Date.now(), type, ...meal };
+  // Optimistic update
+  savedRecipes = [entry, ...savedRecipes.filter(r => r.id !== id)];
   renderRecipeBook();
+  try { await apiFetch('/api/recipes', { method: 'POST', body: JSON.stringify(entry) }); }
+  catch { showToast('Could not save recipe to server.', 'error'); }
 }
 
-function removeRecipe(id) {
-  const saved = getSavedRecipes().filter(r => r.id !== id);
-  localStorage.setItem(RECIPES_KEY, JSON.stringify(saved));
+async function removeRecipe(id) {
+  // Optimistic update
+  savedRecipes = savedRecipes.filter(r => r.id !== id);
   renderRecipeBook();
-  // Update any visible star buttons in the meal plan
   document.querySelectorAll(`[data-recipe-id="${CSS.escape(id)}"].btn-star`).forEach(btn => {
-    btn.textContent = '☆';
-    btn.classList.remove('starred');
-    btn.title = 'Save to Recipe Book';
+    btn.textContent = '☆'; btn.classList.remove('starred'); btn.title = 'Save to Recipe Book';
   });
+  try { await apiFetch(`/api/recipes/${encodeURIComponent(id)}`, { method: 'DELETE' }); }
+  catch { showToast('Could not remove recipe from server.', 'error'); }
 }
 
 function renderRecipeBook() {
-  const saved = getSavedRecipes();
-
   // Nav badge
-  if (saved.length > 0) {
-    show(recipesNavBadge);
-    recipesNavBadge.textContent = saved.length;
-  } else {
-    hide(recipesNavBadge);
-  }
+  recipesNavBadge.hidden = savedRecipes.length === 0;
+  recipesNavBadge.textContent = savedRecipes.length;
 
-  // "Send All" button — only when AnyList is configured and there are recipes
-  if (anylistConfigured && saved.length > 0) show(anylistAllRecipesBtn);
+  // "Send All" button
+  if (anylistConfigured && savedRecipes.length > 0) show(anylistAllRecipesBtn);
   else hide(anylistAllRecipesBtn);
 
-  if (!saved.length) {
-    show(recipesEmptyState);
-    recipesList.innerHTML = '';
-    return;
+  if (!savedRecipes.length) {
+    show(recipesEmptyState); recipesList.innerHTML = ''; return;
   }
   hide(recipesEmptyState);
 
-  recipesList.innerHTML = saved.map(r => {
+  recipesList.innerHTML = savedRecipes.map(r => {
     const id     = escHtml(r.id);
     const type   = r.type || 'breakfast';
     const macros = r.macros || {};
@@ -291,11 +285,9 @@ function renderRecipeBook() {
       macros.carbs    != null ? `<span class="macro-pill carbs">${macros.carbs}g carbs</span>`   : '',
       macros.fat      != null ? `<span class="macro-pill fat">${macros.fat}g fat</span>`         : '',
     ].filter(Boolean).join('');
-
     const anylistBtnHtml = anylistConfigured && (r.ingredients?.length > 0)
       ? `<button class="btn-anylist-recipe" data-recipe-id="${id}" title="Send ingredients to AnyList">📱</button>`
       : '';
-
     return `<div class="recipe-book-item">
       <div class="recipe-book-top">
         <div class="recipe-book-info">
@@ -313,7 +305,6 @@ function renderRecipeBook() {
     </div>`;
   }).join('');
 
-  // Attach event handlers
   recipesList.querySelectorAll('.btn-print-recipe').forEach(btn =>
     btn.addEventListener('click', () => printSingleRecipe(btn.dataset.recipeId))
   );
@@ -322,26 +313,25 @@ function renderRecipeBook() {
   );
   recipesList.querySelectorAll('.btn-anylist-recipe').forEach(btn => {
     btn.addEventListener('click', async () => {
-      const recipe = getSavedRecipes().find(r => r.id === btn.dataset.recipeId);
+      const recipe = savedRecipes.find(r => r.id === btn.dataset.recipeId);
       if (!recipe?.ingredients?.length) { showToast('No ingredients saved for this recipe.', 'info'); return; }
-      btn.disabled = true;
-      const orig = btn.textContent;
-      btn.textContent = '⏳';
+      btn.disabled = true; btn.textContent = '⏳';
       await sendIngredientsToAnyList(recipe.ingredients);
-      btn.disabled = false;
-      btn.textContent = orig;
+      btn.disabled = false; btn.textContent = '📱';
     });
   });
 }
 
-clearRecipesBtn.addEventListener('click', () => {
+clearRecipesBtn.addEventListener('click', async () => {
   if (!confirm('Clear all saved recipes?')) return;
-  localStorage.removeItem(RECIPES_KEY);
+  savedRecipes = [];
   renderRecipeBook();
+  try { await apiFetch('/api/recipes/all', { method: 'DELETE' }); }
+  catch { showToast('Could not clear recipes on server.', 'error'); }
 });
 
 function printSingleRecipe(id) {
-  const recipe = getSavedRecipes().find(r => r.id === id);
+  const recipe = savedRecipes.find(r => r.id === id);
   if (!recipe) return;
   const win = window.open('', '_blank', 'width=680,height=900');
   if (!win) { showToast('Pop-up blocked — allow pop-ups to print.', 'error'); return; }
@@ -358,11 +348,7 @@ function buildRecipePrintHTML(r) {
     <h3>Batch Cooking</h3>
     <p>${r.batch_info.servings ? `Makes <strong>${r.batch_info.servings} servings</strong>. ` : ''}
     ${esc(r.batch_info.storage||'')} ${esc(r.batch_info.reheat||'')}</p>` : '';
-  return `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>${esc(r.name||'Recipe')}</title>
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${esc(r.name||'Recipe')}</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 560px; margin: 36px auto; padding: 0 24px; color: #1a1a1a; line-height: 1.6; }
@@ -373,73 +359,51 @@ function buildRecipePrintHTML(r) {
     .macros { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0; }
     .macro { background: #f3f3f3; border: 1px solid #ddd; padding: 4px 11px; border-radius: 50px; font-size: .78rem; font-weight: 600; }
     h3 { font-weight: 700; color: #2D6A4F; margin: 18px 0 8px; text-transform: uppercase; letter-spacing: .4px; font-size: .8rem; }
-    ul, ol { padding-left: 20px; }
-    li { margin-bottom: 5px; font-size: .9rem; }
+    ul, ol { padding-left: 20px; } li { margin-bottom: 5px; font-size: .9rem; }
     .batch-box { background: #CCFBF1; border: 1px solid #99f6e4; border-radius: 8px; padding: 12px 14px; margin-top: 18px; font-size: .85rem; }
-    .batch-box h3 { margin-top: 0; color: #0F766E; }
     footer { margin-top: 28px; padding-top: 12px; border-top: 1px solid #eee; font-size: .72rem; color: #999; }
     @media print { body { margin: 0; } }
-  </style>
-</head>
-<body>
-  <header>
-    <div class="tag">${esc(cap(type))}</div>
-    <h1>${esc(r.name||'')}</h1>
-    <p class="meta">High-Protein · Dairy-Free · Kosher</p>
-  </header>
+  </style></head><body>
+  <header><div class="tag">${esc(cap(type))}</div><h1>${esc(r.name||'')}</h1><p class="meta">High-Protein · Dairy-Free · Kosher</p></header>
   <div class="macros">
-    ${macros.calories != null ? `<span class="macro">${macros.calories} kcal</span>` : ''}
-    ${macros.protein  != null ? `<span class="macro">${macros.protein}g protein</span>` : ''}
-    ${macros.carbs    != null ? `<span class="macro">${macros.carbs}g carbs</span>` : ''}
-    ${macros.fat      != null ? `<span class="macro">${macros.fat}g fat</span>` : ''}
+    ${macros.calories!=null?`<span class="macro">${macros.calories} kcal</span>`:''}
+    ${macros.protein !=null?`<span class="macro">${macros.protein}g protein</span>`:''}
+    ${macros.carbs   !=null?`<span class="macro">${macros.carbs}g carbs</span>`:''}
+    ${macros.fat     !=null?`<span class="macro">${macros.fat}g fat</span>`:''}
   </div>
   ${ingHtml  ? `<h3>Ingredients</h3><ul>${ingHtml}</ul>`   : ''}
   ${instHtml ? `<h3>Instructions</h3><ol>${instHtml}</ol>` : ''}
   ${r.batch_info ? `<div class="batch-box">${batchHtml}</div>` : ''}
   <footer>Generated by AI Meal Planner · Verify nutritional info with a registered dietitian</footer>
-</body>
-</html>`;
+</body></html>`;
 }
 
 // ── History ───────────────────────────────────────────────────
-function getHistory() {
-  try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || []; }
-  catch { return []; }
-}
+function getHistory() { return planHistory; }
 
-function saveToHistory(data, config) {
-  const history = getHistory();
+async function saveToHistory(data, config) {
   const entry = { id:`plan_${Date.now()}`, savedAt:Date.now(), config, summary:data.plan_summary||{}, data };
-  history.unshift(entry);
-  if (history.length > MAX_HISTORY) history.length = MAX_HISTORY;
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+  planHistory = [entry, ...planHistory].slice(0, 10);
   renderHistoryPanel();
+  try { await apiFetch('/api/history', { method: 'POST', body: JSON.stringify(entry) }); }
+  catch { showToast('Could not save plan to server.', 'error'); }
 }
 
-function deleteFromHistory(id) {
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(getHistory().filter(e => e.id !== id)));
+async function deleteFromHistory(id) {
+  planHistory = planHistory.filter(e => e.id !== id);
   renderHistoryPanel();
+  try { await apiFetch(`/api/history/${encodeURIComponent(id)}`, { method: 'DELETE' }); }
+  catch { showToast('Could not delete plan from server.', 'error'); }
 }
 
 function renderHistoryPanel() {
-  const history = getHistory();
+  historyNavBadge.hidden = planHistory.length === 0;
+  historyNavBadge.textContent = planHistory.length;
 
-  // Nav badge
-  if (history.length > 0) {
-    show(historyNavBadge);
-    historyNavBadge.textContent = history.length;
-  } else {
-    hide(historyNavBadge);
-  }
-
-  if (!history.length) {
-    show(historyEmptyState);
-    historyList.innerHTML = '';
-    return;
-  }
+  if (!planHistory.length) { show(historyEmptyState); historyList.innerHTML = ''; return; }
   hide(historyEmptyState);
 
-  historyList.innerHTML = history.map(entry => {
+  historyList.innerHTML = planHistory.map(entry => {
     const d       = new Date(entry.savedAt);
     const dateStr = d.toLocaleDateString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
     const cfg     = entry.config || {};
@@ -447,12 +411,12 @@ function renderHistoryPanel() {
     const batch   = (cfg.batch||[]).length ? ` · Batch: ${(cfg.batch||[]).map(capitalize).join(', ')}` : '';
     const cal     = entry.summary?.avg_daily_calories;
     const prot    = entry.summary?.avg_daily_protein;
-    const statsStr= [cal ? `${cal} kcal` : null, prot ? `${prot}g protein` : null].filter(Boolean).join(' · ');
+    const statsStr= [cal?`${cal} kcal`:null, prot?`${prot}g protein`:null].filter(Boolean).join(' · ');
     return `<div class="history-item">
       <div class="history-meta">
         <div class="history-date">${escHtml(dateStr)}</div>
         <div class="history-desc">${cfg.days||'?'}-Day · ${escHtml(meals)}${escHtml(batch)}</div>
-        ${statsStr ? `<div class="history-stats">Avg: ${escHtml(statsStr)}/day</div>` : ''}
+        ${statsStr?`<div class="history-stats">Avg: ${escHtml(statsStr)}/day</div>`:''}
       </div>
       <div class="history-actions">
         <button class="btn-load-plan"   data-id="${escHtml(entry.id)}">Load</button>
@@ -463,7 +427,7 @@ function renderHistoryPanel() {
 
   historyList.querySelectorAll('.btn-load-plan').forEach(btn =>
     btn.addEventListener('click', () => {
-      const entry = getHistory().find(e => e.id === btn.dataset.id);
+      const entry = planHistory.find(e => e.id === btn.dataset.id);
       if (entry) loadPlanFromHistory(entry);
     })
   );
@@ -485,18 +449,17 @@ function loadPlanFromHistory(entry) {
   if (cfg.notes !== undefined) notesInput.value = cfg.notes;
   currentPlanData = entry.data;
   renderResults(entry.data);
-  hide(planEmptyState);
-  hide(errorSection);
-  show(resultsSection);
-  show(planNavBadge);
+  hide(planEmptyState); hide(errorSection); show(resultsSection); show(planNavBadge);
   showPage('plan');
   showToast('Plan loaded from history.', 'info');
 }
 
-clearHistoryBtn.addEventListener('click', () => {
+clearHistoryBtn.addEventListener('click', async () => {
   if (!confirm('Clear all saved plans?')) return;
-  localStorage.removeItem(HISTORY_KEY);
+  planHistory = [];
   renderHistoryPanel();
+  try { await apiFetch('/api/history/all', { method: 'DELETE' }); }
+  catch { showToast('Could not clear history on server.', 'error'); }
 });
 
 // ── Rendering ─────────────────────────────────────────────────
@@ -564,16 +527,12 @@ mealPlanContainer.addEventListener('click', e => {
   const id = btn.dataset.recipeId;
   if (isRecipeSaved(id)) {
     removeRecipe(id);
-    btn.textContent = '☆';
-    btn.classList.remove('starred');
-    btn.title = 'Save to Recipe Book';
+    btn.textContent = '☆'; btn.classList.remove('starred'); btn.title = 'Save to Recipe Book';
     showToast('Removed from Recipe Book.', 'info');
   } else {
     const data = mealDataMap.get(id);
     if (data) saveRecipe(id, data.type, data.meal);
-    btn.textContent = '★';
-    btn.classList.add('starred');
-    btn.title = 'Remove from Recipe Book';
+    btn.textContent = '★'; btn.classList.add('starred'); btn.title = 'Remove from Recipe Book';
     showToast('Saved to Recipe Book! ⭐', 'success');
   }
 });
@@ -581,14 +540,8 @@ mealPlanContainer.addEventListener('click', e => {
 function renderSummaryBar(summary) {
   if (!summary) { summaryBar.innerHTML = ''; return; }
   summaryBar.innerHTML = `
-    <div class="summary-stat">
-      <div class="stat-value">${summary.avg_daily_calories??'—'}</div>
-      <div class="stat-label">Avg daily kcal</div>
-    </div>
-    <div class="summary-stat">
-      <div class="stat-value">${summary.avg_daily_protein??'—'}g</div>
-      <div class="stat-label">Avg daily protein</div>
-    </div>
+    <div class="summary-stat"><div class="stat-value">${summary.avg_daily_calories??'—'}</div><div class="stat-label">Avg daily kcal</div></div>
+    <div class="summary-stat"><div class="stat-value">${summary.avg_daily_protein??'—'}g</div><div class="stat-label">Avg daily protein</div></div>
     ${summary.highlights?`<div class="summary-highlight">${escHtml(summary.highlights)}</div>`:''}`;
 }
 
@@ -599,8 +552,7 @@ function renderShoppingList(list) {
   const keys  = [...new Set([...ORDER,...Object.keys(list)])].filter(k=>list[k]?.length);
   if (!keys.length) { shoppingGrid.innerHTML='<p style="color:var(--text-muted)">No shopping list generated.</p>'; return; }
   keys.forEach(key => {
-    const items = list[key];
-    if (!items?.length) return;
+    const items = list[key]; if (!items?.length) return;
     const div = document.createElement('div');
     div.className = 'shopping-category';
     div.innerHTML = `<div class="category-title">${CATEGORY_ICONS[key]||'📦'} ${CATEGORY_LABELS[key]||capitalize(key.replace(/_/g,' '))}</div>
@@ -615,8 +567,7 @@ function renderResults(data) {
   mealPlanContainer.innerHTML = plan.map(renderDay).join('');
   renderSummaryBar(data.plan_summary);
   renderShoppingList(data.shopping_list);
-  const meals = getSelectedMeals();
-  const batch = getSelectedBatchMeals();
+  const meals = getSelectedMeals(), batch = getSelectedBatchMeals();
   let title = `${plan.length}-Day Plan · ${meals.map(capitalize).join(', ')}`;
   if (batch.length) title += ` (Batch: ${batch.map(capitalize).join(', ')})`;
   document.getElementById('results-title').textContent = title;
@@ -629,32 +580,23 @@ async function generate() {
   const batchMeals = getSelectedBatchMeals();
   if (!meals.length) { alert('Please select at least one meal type.'); return; }
 
-  // Switch to Plan page and show loading state
   showPage('plan');
-  hide(planEmptyState);
-  hide(errorSection);
-  hide(resultsSection);
-  show(loadingSection);
+  hide(planEmptyState); hide(errorSection); hide(resultsSection); show(loadingSection);
   generateBtn.disabled    = true;
   loadingText.textContent = LOADING_MSGS[0];
   const msgTimer = cycleLoadingMessages();
 
   try {
-    const res  = await fetch('/api/generate', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+    const json = await apiFetch('/api/generate', {
+      method: 'POST',
       body: JSON.stringify({ days:currentDays, meals, notes:notesInput.value, batchMeals }),
     });
-    const json = await res.json();
     clearInterval(msgTimer);
     if (!json.success) throw new Error(json.error || 'Unknown error');
-
     currentPlanData = json.data;
-    saveToHistory(json.data, { days:currentDays, meals, batch:batchMeals, notes:notesInput.value });
+    await saveToHistory(json.data, { days:currentDays, meals, batch:batchMeals, notes:notesInput.value });
     renderResults(json.data);
-    hide(loadingSection);
-    show(resultsSection);
-    show(planNavBadge);
-
+    hide(loadingSection); show(resultsSection); show(planNavBadge);
   } catch (err) {
     clearInterval(msgTimer);
     hide(loadingSection);
@@ -674,7 +616,7 @@ printBtn.addEventListener('click', () => window.print());
 // ── Init ──────────────────────────────────────────────────────
 async function init() {
   updateDays(0);
-  await checkAnyListStatus();  // wait so recipe book AnyList buttons render correctly
+  await Promise.all([checkAnyListStatus(), loadServerData()]);
   updateAnyListUI();
   renderHistoryPanel();
   renderRecipeBook();

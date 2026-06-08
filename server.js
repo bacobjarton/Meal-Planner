@@ -1,15 +1,122 @@
 require('dotenv').config({ path: require('path').join(__dirname, '.env'), override: true });
-const express  = require('express');
-const Anthropic = require('@anthropic-ai/sdk');
-const AnyList  = require('anylist');
-const path     = require('path');
-const os       = require('os');
+const express   = require('express');
+const Anthropic  = require('@anthropic-ai/sdk');
+const AnyList   = require('anylist');
+const { Pool }  = require('pg');
+const path      = require('path');
+const os        = require('os');
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+// ── Database ──────────────────────────────────────────────────
+const pool = process.env.DATABASE_URL
+  ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } })
+  : null;
+
+async function initDB() {
+  if (!pool) {
+    console.log('  No DATABASE_URL — recipes & history will not persist across sessions.');
+    return;
+  }
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS saved_recipes (
+        id       TEXT PRIMARY KEY,
+        saved_at BIGINT NOT NULL,
+        type     TEXT   NOT NULL,
+        data     JSONB  NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS plan_history (
+        id       TEXT PRIMARY KEY,
+        saved_at BIGINT NOT NULL,
+        config   JSONB  NOT NULL,
+        summary  JSONB  NOT NULL,
+        data     JSONB  NOT NULL
+      );
+    `);
+    console.log('  Database ready ✓');
+  } catch (err) {
+    console.error('  Database init error:', err.message);
+  }
+}
+
+// ── Recipes API ───────────────────────────────────────────────
+app.get('/api/recipes', async (_req, res) => {
+  if (!pool) return res.json([]);
+  try {
+    const { rows } = await pool.query('SELECT * FROM saved_recipes ORDER BY saved_at DESC');
+    res.json(rows.map(r => ({ id: r.id, savedAt: Number(r.saved_at), type: r.type, ...r.data })));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/recipes', async (req, res) => {
+  if (!pool) return res.status(503).json({ success: false, error: 'No database configured.' });
+  const { id, savedAt, type, ...data } = req.body;
+  try {
+    await pool.query(
+      `INSERT INTO saved_recipes (id, saved_at, type, data) VALUES ($1,$2,$3,$4)
+       ON CONFLICT (id) DO UPDATE SET saved_at=$2, type=$3, data=$4`,
+      [id, savedAt, type, data]
+    );
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/recipes/all', async (_req, res) => {
+  if (!pool) return res.json({ success: false });
+  try { await pool.query('DELETE FROM saved_recipes'); res.json({ success: true }); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/recipes/:id', async (req, res) => {
+  if (!pool) return res.json({ success: false });
+  try { await pool.query('DELETE FROM saved_recipes WHERE id=$1', [req.params.id]); res.json({ success: true }); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── History API ───────────────────────────────────────────────
+app.get('/api/history', async (_req, res) => {
+  if (!pool) return res.json([]);
+  try {
+    const { rows } = await pool.query('SELECT * FROM plan_history ORDER BY saved_at DESC LIMIT 10');
+    res.json(rows.map(r => ({ id: r.id, savedAt: Number(r.saved_at), config: r.config, summary: r.summary, data: r.data })));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/history', async (req, res) => {
+  if (!pool) return res.status(503).json({ success: false, error: 'No database configured.' });
+  const { id, savedAt, config, summary, data } = req.body;
+  try {
+    await pool.query(
+      `INSERT INTO plan_history (id, saved_at, config, summary, data) VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (id) DO UPDATE SET saved_at=$2, config=$3, summary=$4, data=$5`,
+      [id, savedAt, config, summary, data]
+    );
+    // Prune to 10 most recent
+    await pool.query(`
+      DELETE FROM plan_history WHERE id NOT IN (
+        SELECT id FROM plan_history ORDER BY saved_at DESC LIMIT 10
+      )
+    `);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/history/all', async (_req, res) => {
+  if (!pool) return res.json({ success: false });
+  try { await pool.query('DELETE FROM plan_history'); res.json({ success: true }); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/history/:id', async (req, res) => {
+  if (!pool) return res.json({ success: false });
+  try { await pool.query('DELETE FROM plan_history WHERE id=$1', [req.params.id]); res.json({ success: true }); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
 
 // ── Prompt builder ────────────────────────────────────────────
 const SYSTEM_PROMPT = `You are a professional nutritionist and meal planner specializing in high-protein, dairy-free, kosher meal plans. You respond with valid JSON only — no markdown, no code fences, no explanation text outside the JSON object.`;
@@ -141,13 +248,9 @@ app.post('/api/send-to-anylist', async (req, res) => {
     return res.status(400).json({ success: false, error: 'AnyList credentials not configured in .env file.' });
 
   const listName = process.env.ANYLIST_LIST_NAME || 'Groceries';
-
-  // Flatten all shopping list items across categories
   const allItems = [];
-  for (const [category, items] of Object.entries(shoppingList || {})) {
-    if (Array.isArray(items)) {
-      for (const item of items) allItems.push(parseItem(String(item)));
-    }
+  for (const [, items] of Object.entries(shoppingList || {})) {
+    if (Array.isArray(items)) items.forEach(item => allItems.push(parseItem(String(item))));
   }
 
   if (!allItems.length)
@@ -158,17 +261,12 @@ app.post('/api/send-to-anylist', async (req, res) => {
     al = new AnyList({ email: process.env.ANYLIST_EMAIL, password: process.env.ANYLIST_PASSWORD });
     await al.login();
     await al.getLists();
-
     const list = al.getListByName(listName);
-    if (!list)
-      return res.status(404).json({ success: false, error: `List "${listName}" not found in your AnyList account.` });
-
-    // Add all items
+    if (!list) return res.status(404).json({ success: false, error: `List "${listName}" not found in your AnyList account.` });
     for (const { name, quantity } of allItems) {
       const item = al.createItem({ name, quantity });
       await list.addItem(item);
     }
-
     res.json({ success: true, count: allItems.length, listName });
   } catch (err) {
     console.error('AnyList error:', err);
@@ -178,38 +276,33 @@ app.post('/api/send-to-anylist', async (req, res) => {
   }
 });
 
-// Parse "Chicken breast (2 lbs)" → { name, quantity }
 function parseItem(str) {
   const match = /^(.+?)\s*\(([^)]+)\)\s*$/.exec(str.trim());
-  return match
-    ? { name: match[1].trim(), quantity: match[2].trim() }
-    : { name: str.trim(), quantity: '' };
+  return match ? { name: match[1].trim(), quantity: match[2].trim() } : { name: str.trim(), quantity: '' };
 }
 
-// ── Serve PNG icons (generated from SVG via redirect) ─────────
-// Browsers that need .png icons get the SVG served as SVG; the
-// manifest also lists the SVG as "any" size so modern browsers use it.
+// ── Serve PNG icons ───────────────────────────────────────────
 app.get('/icon-:size.png', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'icon.svg'));
 });
 
 // ── Start server ──────────────────────────────────────────────
 function getLocalIP() {
-  for (const ifaces of Object.values(os.networkInterfaces())) {
-    for (const iface of ifaces) {
+  for (const ifaces of Object.values(os.networkInterfaces()))
+    for (const iface of ifaces)
       if (iface.family === 'IPv4' && !iface.internal) return iface.address;
-    }
-  }
   return null;
 }
 
 const PORT     = process.env.PORT || 3000;
 const HOSTNAME = os.hostname();
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, '0.0.0.0', async () => {
   const localIP = getLocalIP();
   console.log(`\n  Meal Planner running:`);
-  console.log(`  Local      → http://localhost:${PORT}`);
-  if (localIP) console.log(`  By IP      → http://${localIP}:${PORT}`);
-  console.log(`  By name    → http://${HOSTNAME}.local:${PORT}  ← use this on your phone (stable)`);
-  console.log(`\n  On iPhone: open the ".local" URL in Safari → Share → Add to Home Screen\n`);
+  console.log(`  Local   → http://localhost:${PORT}`);
+  if (localIP) console.log(`  Network → http://${localIP}:${PORT}`);
+  console.log(`  Mobile  → http://${HOSTNAME}.local:${PORT}`);
+  console.log();
+  await initDB();
+  console.log();
 });
