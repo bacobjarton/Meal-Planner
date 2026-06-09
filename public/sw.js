@@ -1,4 +1,4 @@
-const CACHE_NAME   = 'meal-planner-v4';
+const CACHE_NAME   = 'meal-planner-v5';
 const OFFLINE_URL  = '/offline.html';
 const STATIC_ASSETS = ['/', '/index.html', '/style.css', '/app.js', '/icon.svg', '/manifest.json', OFFLINE_URL];
 

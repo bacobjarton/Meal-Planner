@@ -118,6 +118,20 @@ app.delete('/api/history/:id', async (req, res) => {
   catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ── Debug endpoint ────────────────────────────────────────────
+app.get('/api/debug', async (_req, res) => {
+  const info = { dbConnected: !!pool, recipeCount: 0, historyCount: 0, error: null };
+  if (pool) {
+    try {
+      const r = await pool.query('SELECT COUNT(*) FROM saved_recipes');
+      const h = await pool.query('SELECT COUNT(*) FROM plan_history');
+      info.recipeCount  = parseInt(r.rows[0].count, 10);
+      info.historyCount = parseInt(h.rows[0].count, 10);
+    } catch (err) { info.error = err.message; }
+  }
+  res.json(info);
+});
+
 // ── Prompt builder ────────────────────────────────────────────
 const SYSTEM_PROMPT = `You are a professional nutritionist and meal planner specializing in high-protein, dairy-free, kosher meal plans. You respond with valid JSON only — no markdown, no code fences, no explanation text outside the JSON object.`;
 

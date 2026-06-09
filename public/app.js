@@ -148,13 +148,15 @@ async function apiFetch(url, options = {}) {
 
 async function loadServerData() {
   try {
-    const [recipes, history] = await Promise.all([
+    const [recipesRes, historyRes] = await Promise.all([
       apiFetch('/api/recipes'),
       apiFetch('/api/history'),
     ]);
     savedRecipes = Array.isArray(recipesRes) ? recipesRes : [];
     planHistory  = Array.isArray(historyRes) ? historyRes : [];
-  } catch {
+  } catch (err) {
+    console.error('loadServerData failed:', err);
+    showToast('Could not load saved data from server.', 'error');
     savedRecipes = [];
     planHistory  = [];
   }
