@@ -243,6 +243,45 @@ app.post('/api/generate', async (req, res) => {
   }
 });
 
+// ── Swap a single meal ────────────────────────────────────────
+app.post('/api/swap-meal', async (req, res) => {
+  const { day, mealType, currentMealName, days, notes, batchMeals } = req.body;
+
+  if (!mealType)
+    return res.status(400).json({ success: false, error: 'Missing meal type.' });
+
+  if (!process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY === 'your_api_key_here')
+    return res.status(500).json({ success: false, error: 'API key not configured. Add your ANTHROPIC_API_KEY to the .env file.' });
+
+  const isBatch = Array.isArray(batchMeals) && batchMeals.includes(mealType);
+  const notesLine = notes && notes.trim() ? ` User preferences: ${notes.trim()}.` : '';
+  const batchLine = isBatch
+    ? ` This is a batch-cooked meal — include a "batch_info" object (servings, storage, reheat) scaled to cover ${days || 7} days.`
+    : '';
+
+  const prompt = `Suggest ONE alternative ${mealType} meal. Must be high-protein, dairy-free, kosher. Current meal to replace: ${currentMealName || 'none'}.${notesLine}${batchLine} Return JSON only with the same meal object schema: { "name", "description", "ingredients": [...], "instructions": [...], "macros": { "calories", "protein", "carbs", "fat" }${isBatch ? ', "batch_info": { "servings", "storage", "reheat" }' : ''} }. No markdown, no code fences — just the JSON object.`;
+
+  try {
+    const message = await client.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 2000,
+      system: SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    const raw     = message.content[0].text.trim();
+    const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+
+    let meal;
+    try   { meal = JSON.parse(cleaned); }
+    catch { return res.status(500).json({ success: false, error: 'The AI returned an unexpected format. Please try again.' }); }
+
+    res.json({ success: true, meal });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err?.message || 'Unknown error calling the AI API.' });
+  }
+});
+
 // ── AnyList status ────────────────────────────────────────────
 app.get('/api/anylist-status', (_req, res) => {
   const configured = !!(

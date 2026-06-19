@@ -46,11 +46,12 @@
         <div class="config-grid">
 
           <div class="field-group">
-            <label class="field-label" for="days-input">Number of Days</label>
-            <div class="days-control">
-              <button class="days-btn" id="days-minus" aria-label="Decrease days">−</button>
-              <span class="days-display" id="days-display">7</span>
-              <button class="days-btn" id="days-plus" aria-label="Increase days">+</button>
+            <label class="field-label">Number of Days</label>
+            <div class="days-quickselect" id="days-quickselect" role="group" aria-label="Number of days">
+              <button type="button" class="days-pill" data-days="3">3</button>
+              <button type="button" class="days-pill" data-days="5">5</button>
+              <button type="button" class="days-pill active" data-days="7">7</button>
+              <button type="button" class="days-pill" data-days="14">14</button>
             </div>
             <input type="hidden" id="days-input" value="7" />
           </div>
@@ -120,9 +121,19 @@
               id="notes-input"
               class="notes-textarea"
               rows="3"
-              placeholder="e.g. avoid tree nuts, love Asian flavors, prefer quick prep meals, training for a marathon..."
+              placeholder="e.g. no tree nuts, love Asian flavors, max 30 min prep, training for marathon..."
             ></textarea>
             <p class="field-hint">Ingredients to avoid, cuisine preferences, time constraints, goals, etc.</p>
+          </div>
+
+          <div class="field-group field-group--wide">
+            <label class="field-label" for="title-input">Plan Name (optional)</label>
+            <input
+              type="text"
+              id="title-input"
+              class="title-input"
+              placeholder="e.g. Week of June 23, Bulk Phase..."
+            />
           </div>
 
         </div>
@@ -229,6 +240,8 @@
         <h3>No saved recipes yet</h3>
         <p>Tap the ☆ star on any meal in your plan to save it here for quick reference.</p>
       </div>
+
+      <div class="recipe-filter no-print" id="recipe-filter" hidden></div>
 
       <div class="page-list-wrap" id="recipes-list"></div>
 

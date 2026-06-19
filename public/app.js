@@ -2,7 +2,7 @@
 
 // ── Constants ─────────────────────────────────────────────────
 const MIN_DAYS = 1;
-const MAX_DAYS = 7;
+const MAX_DAYS = 14;
 
 // ── State ─────────────────────────────────────────────────────
 let currentDays       = 7;
@@ -13,17 +13,17 @@ let anylistListName   = 'Groceries';
 // Synced from server on load, kept in memory for sync reads
 let savedRecipes = [];
 let planHistory  = [];
+let recipeFilter = 'all';
 
 // Temp map populated each render so star handlers can access meal data
 const mealDataMap = new Map();
 
 // ── DOM refs ──────────────────────────────────────────────────
-const daysDisplay          = document.getElementById('days-display');
 const daysInput            = document.getElementById('days-input');
-const daysMinus            = document.getElementById('days-minus');
-const daysPlus             = document.getElementById('days-plus');
+const daysQuickselect      = document.getElementById('days-quickselect');
 const generateBtn          = document.getElementById('generate-btn');
 const notesInput           = document.getElementById('notes-input');
+const titleInput           = document.getElementById('title-input');
 const loadingSection       = document.getElementById('loading-section');
 const loadingText          = document.getElementById('loading-text');
 const errorSection         = document.getElementById('error-section');
@@ -46,6 +46,7 @@ const recipesEmptyState    = document.getElementById('recipes-empty-state');
 const recipesNavBadge      = document.getElementById('recipes-nav-badge');
 const anylistAllRecipesBtn = document.getElementById('anylist-all-recipes-btn');
 const clearRecipesBtn      = document.getElementById('clear-recipes-btn');
+const recipeFilterEl       = document.getElementById('recipe-filter');
 // History
 const historyList          = document.getElementById('history-list');
 const historyEmptyState    = document.getElementById('history-empty-state');
@@ -71,16 +72,24 @@ document.querySelectorAll('.nav-tab').forEach(btn => {
 });
 goPlannerBtn.addEventListener('click', () => showPage('planner'));
 
-// ── Days stepper ──────────────────────────────────────────────
-function updateDays(delta) {
-  currentDays = Math.min(MAX_DAYS, Math.max(MIN_DAYS, currentDays + delta));
-  daysDisplay.textContent = currentDays;
-  daysInput.value         = currentDays;
-  daysMinus.disabled      = currentDays === MIN_DAYS;
-  daysPlus.disabled       = currentDays === MAX_DAYS;
+// Tabs without content yet show a subtle "locked" appearance (still clickable)
+function updateNavLockStates() {
+  document.getElementById('nav-plan').classList.toggle('locked',    !currentPlanData);
+  document.getElementById('nav-recipes').classList.toggle('locked', savedRecipes.length === 0);
+  document.getElementById('nav-history').classList.toggle('locked', planHistory.length === 0);
 }
-daysMinus.addEventListener('click', () => updateDays(-1));
-daysPlus.addEventListener('click',  () => updateDays(+1));
+
+// ── Days quick-select ─────────────────────────────────────────
+function setDays(val) {
+  currentDays     = Math.min(MAX_DAYS, Math.max(MIN_DAYS, Number(val) || currentDays));
+  daysInput.value = currentDays;
+  daysQuickselect.querySelectorAll('.days-pill').forEach(btn => {
+    btn.classList.toggle('active', Number(btn.dataset.days) === currentDays);
+  });
+}
+daysQuickselect.querySelectorAll('.days-pill').forEach(btn => {
+  btn.addEventListener('click', () => setDays(btn.dataset.days));
+});
 
 // ── Batch sync ────────────────────────────────────────────────
 document.querySelectorAll('input[name="meals"]').forEach(mealCb => {
@@ -263,21 +272,48 @@ async function removeRecipe(id) {
   catch { showToast('Could not remove recipe from server.', 'error'); }
 }
 
+function renderRecipeFilter() {
+  const types  = ['breakfast', 'lunch', 'dinner', 'snacks'];
+  const counts = { all: savedRecipes.length };
+  types.forEach(t => { counts[t] = savedRecipes.filter(r => (r.type || 'breakfast') === t).length; });
+  const pills = [['all', 'All'], ...types.map(t => [t, capitalize(t)])];
+  recipeFilterEl.innerHTML = pills.map(([key, label]) =>
+    `<button class="filter-pill ${recipeFilter === key ? 'active' : ''}" data-filter="${key}">${label} (${counts[key] || 0})</button>`
+  ).join('');
+  recipeFilterEl.querySelectorAll('.filter-pill').forEach(btn =>
+    btn.addEventListener('click', () => { recipeFilter = btn.dataset.filter; renderRecipeBook(); })
+  );
+}
+
 function renderRecipeBook() {
   // Nav badge
   recipesNavBadge.hidden = savedRecipes.length === 0;
   recipesNavBadge.textContent = savedRecipes.length;
+  updateNavLockStates();
 
   // "Send All" button
   if (anylistConfigured && savedRecipes.length > 0) show(anylistAllRecipesBtn);
   else hide(anylistAllRecipesBtn);
 
   if (!savedRecipes.length) {
+    recipeFilter = 'all';
+    hide(recipeFilterEl);
     show(recipesEmptyState); recipesList.innerHTML = ''; return;
   }
   hide(recipesEmptyState);
+  show(recipeFilterEl);
+  renderRecipeFilter();
 
-  recipesList.innerHTML = savedRecipes.map(r => {
+  const visible = recipeFilter === 'all'
+    ? savedRecipes
+    : savedRecipes.filter(r => (r.type || 'breakfast') === recipeFilter);
+
+  if (!visible.length) {
+    recipesList.innerHTML = `<div class="recipe-filter-empty">No ${capitalize(recipeFilter)} recipes saved yet.</div>`;
+    return;
+  }
+
+  recipesList.innerHTML = visible.map(r => {
     const id     = escHtml(r.id);
     const type   = r.type || 'breakfast';
     const macros = r.macros || {};
@@ -398,9 +434,17 @@ async function deleteFromHistory(id) {
   catch { showToast('Could not delete plan from server.', 'error'); }
 }
 
+function previewMealNames(data, n = 3) {
+  const days = data?.meal_plan || [];
+  let names = days.map(d => d.meals?.dinner?.name).filter(Boolean);
+  if (!names.length) names = days.flatMap(d => MEAL_ORDER.map(k => d.meals?.[k]?.name)).filter(Boolean);
+  return names.slice(0, n);
+}
+
 function renderHistoryPanel() {
   historyNavBadge.hidden = planHistory.length === 0;
   historyNavBadge.textContent = planHistory.length;
+  updateNavLockStates();
 
   if (!planHistory.length) { show(historyEmptyState); historyList.innerHTML = ''; return; }
   hide(historyEmptyState);
@@ -411,14 +455,18 @@ function renderHistoryPanel() {
     const cfg     = entry.config || {};
     const meals   = (cfg.meals||[]).map(capitalize).join(', ');
     const batch   = (cfg.batch||[]).length ? ` · Batch: ${(cfg.batch||[]).map(capitalize).join(', ')}` : '';
+    const cfgDesc = `${cfg.days||'?'}-Day · ${meals}${batch}`;
     const cal     = entry.summary?.avg_daily_calories;
     const prot    = entry.summary?.avg_daily_protein;
     const statsStr= [cal?`${cal} kcal`:null, prot?`${prot}g protein`:null].filter(Boolean).join(' · ');
+    const preview = previewMealNames(entry.data).join(' · ');
+    const subLine = cfg.title ? `${cfgDesc} · ${dateStr}` : cfgDesc;
     return `<div class="history-item">
       <div class="history-meta">
-        <div class="history-date">${escHtml(dateStr)}</div>
-        <div class="history-desc">${cfg.days||'?'}-Day · ${escHtml(meals)}${escHtml(batch)}</div>
+        <div class="history-desc">${escHtml(cfg.title || dateStr)}</div>
+        <div class="history-date">${escHtml(subLine)}</div>
         ${statsStr?`<div class="history-stats">Avg: ${escHtml(statsStr)}/day</div>`:''}
+        ${preview?`<div class="history-preview">${escHtml(preview)}</div>`:''}
       </div>
       <div class="history-actions">
         <button class="btn-load-plan"   data-id="${escHtml(entry.id)}">Load</button>
@@ -440,7 +488,7 @@ function renderHistoryPanel() {
 
 function loadPlanFromHistory(entry) {
   const cfg = entry.config || {};
-  if (cfg.days) { currentDays = cfg.days; updateDays(0); }
+  if (cfg.days) setDays(cfg.days);
   document.querySelectorAll('input[name="meals"]').forEach(cb => {
     cb.checked = (cfg.meals||[]).includes(cb.value);
     cb.dispatchEvent(new Event('change'));
@@ -449,9 +497,11 @@ function loadPlanFromHistory(entry) {
     cb.checked = (cfg.batch||[]).includes(cb.value);
   });
   if (cfg.notes !== undefined) notesInput.value = cfg.notes;
+  titleInput.value = cfg.title || '';
   currentPlanData = entry.data;
-  renderResults(entry.data);
+  renderResults(entry.data, cfg.title);
   hide(planEmptyState); hide(errorSection); show(resultsSection); show(planNavBadge);
+  updateNavLockStates();
   showPage('plan');
   showToast('Plan loaded from history.', 'info');
 }
@@ -486,15 +536,18 @@ function renderRecipeDetails(meal) {
   return `<details class="recipe-details"><summary>View Recipe</summary><div class="recipe-body">${ingHtml}${instHtml}${batchHtml}</div></details>`;
 }
 
-function renderMealCard(type, meal) {
+function renderMealCard(type, meal, dayNum) {
   if (!meal) return '';
   const id    = recipeId(type, meal.name);
   const saved = isRecipeSaved(id);
   mealDataMap.set(id, { type, meal });
-  return `<div class="meal-card">
+  return `<div class="meal-card" data-day="${dayNum ?? ''}" data-meal-type="${type}">
     <div class="meal-card-top">
       <span class="meal-type-badge ${type}">${MEAL_ICONS[type]||''} ${capitalize(type)}</span>
-      <button class="btn-star ${saved?'starred':''}" data-recipe-id="${escHtml(id)}" title="${saved?'Remove from Recipe Book':'Save to Recipe Book'}">${saved?'★':'☆'}</button>
+      <div class="meal-card-actions">
+        <button class="btn-swap" title="Swap this meal for an alternative">🔄 Swap</button>
+        <button class="btn-star ${saved?'starred':''}" data-recipe-id="${escHtml(id)}" title="${saved?'Remove from Recipe Book':'Save to Recipe Book'}">${saved?'★':'☆'}</button>
+      </div>
     </div>
     <div class="meal-name">${escHtml(meal.name||'')}</div>
     <div class="meal-desc">${escHtml(meal.description||'')}</div>
@@ -512,7 +565,7 @@ function renderDay(dayObj) {
     totals.fat     !=null?`<strong>${totals.fat}g</strong> fat`:'',
   ].filter(Boolean).join(' &nbsp;|&nbsp; ');
   const meals     = dayObj.meals || {};
-  const mealCards = MEAL_ORDER.filter(k=>meals[k]).map(k=>renderMealCard(k,meals[k])).join('');
+  const mealCards = MEAL_ORDER.filter(k=>meals[k]).map(k=>renderMealCard(k,meals[k],dayObj.day)).join('');
   return `<div class="day-section">
     <div class="day-header">
       <span class="day-label">${escHtml(dayObj.label||`Day ${dayObj.day}`)}</span>
@@ -520,6 +573,55 @@ function renderDay(dayObj) {
     </div>
     <div class="meals-grid">${mealCards||'<div class="meal-card"><em>No meals</em></div>'}</div>
   </div>`;
+}
+
+// Swap button — event delegation on meal plan container
+mealPlanContainer.addEventListener('click', e => {
+  const btn = e.target.closest('.btn-swap');
+  if (!btn) return;
+  const card = btn.closest('.meal-card');
+  if (card) swapMeal(card);
+});
+
+async function swapMeal(card) {
+  if (!currentPlanData) return;
+  const day      = Number(card.dataset.day);
+  const mealType = card.dataset.mealType;
+  const dayObj   = (currentPlanData.meal_plan || []).find(d => d.day === day);
+  if (!dayObj || !dayObj.meals) return;
+  const currentMealName = dayObj.meals[mealType]?.name || '';
+
+  const swapBtn = card.querySelector('.btn-swap');
+  if (swapBtn) { swapBtn.disabled = true; swapBtn.textContent = 'Swapping…'; }
+  card.classList.add('meal-card--swapping');
+
+  try {
+    const json = await apiFetch('/api/swap-meal', {
+      method: 'POST',
+      body: JSON.stringify({
+        day, mealType, currentMealName,
+        days:       currentDays,
+        notes:      notesInput.value,
+        batchMeals: getSelectedBatchMeals(),
+      }),
+    });
+    if (!json.success || !json.meal) throw new Error(json.error || 'Swap failed');
+
+    // Keep currentPlanData consistent so shopping list & history reflect the swap
+    dayObj.meals[mealType] = json.meal;
+
+    const wrap = document.createElement('div');
+    wrap.innerHTML = renderMealCard(mealType, json.meal, day);
+    const newCard = wrap.firstElementChild;
+    card.replaceWith(newCard);
+
+    renderShoppingList(currentPlanData.shopping_list);
+    showToast('Meal swapped! 🔄', 'success');
+  } catch (err) {
+    showToast(err.message || 'Could not swap meal.', 'error');
+    card.classList.remove('meal-card--swapping');
+    if (swapBtn) { swapBtn.disabled = false; swapBtn.textContent = '🔄 Swap'; }
+  }
 }
 
 // Star button — event delegation on meal plan container
@@ -539,11 +641,19 @@ mealPlanContainer.addEventListener('click', e => {
   }
 });
 
+const PROTEIN_TARGET = 150;
 function renderSummaryBar(summary) {
   if (!summary) { summaryBar.innerHTML = ''; return; }
+  const prot = summary.avg_daily_protein;
+  const pct  = prot != null ? Math.min(100, Math.round((Number(prot) / PROTEIN_TARGET) * 100)) : 0;
   summaryBar.innerHTML = `
     <div class="summary-stat"><div class="stat-value">${summary.avg_daily_calories??'—'}</div><div class="stat-label">Avg daily kcal</div></div>
-    <div class="summary-stat"><div class="stat-value">${summary.avg_daily_protein??'—'}g</div><div class="stat-label">Avg daily protein</div></div>
+    <div class="summary-stat summary-stat--protein">
+      <div class="stat-value">${prot??'—'}g</div>
+      <div class="stat-label">Avg daily protein</div>
+      <div class="protein-bar"><div class="protein-bar-fill" style="width:${pct}%"></div></div>
+      <div class="protein-bar-label">vs ${PROTEIN_TARGET}g target</div>
+    </div>
     ${summary.highlights?`<div class="summary-highlight">${escHtml(summary.highlights)}</div>`:''}`;
 }
 
@@ -563,49 +673,65 @@ function renderShoppingList(list) {
   });
 }
 
-function renderResults(data) {
+function renderResults(data, planTitle) {
   mealDataMap.clear();
   const plan = data.meal_plan || [];
   mealPlanContainer.innerHTML = plan.map(renderDay).join('');
   renderSummaryBar(data.plan_summary);
   renderShoppingList(data.shopping_list);
-  const meals = getSelectedMeals(), batch = getSelectedBatchMeals();
-  let title = `${plan.length}-Day Plan · ${meals.map(capitalize).join(', ')}`;
-  if (batch.length) title += ` (Batch: ${batch.map(capitalize).join(', ')})`;
+  let title;
+  if (planTitle && planTitle.trim()) {
+    title = planTitle.trim();
+  } else {
+    const meals = getSelectedMeals(), batch = getSelectedBatchMeals();
+    title = `${plan.length}-Day Plan · ${meals.map(capitalize).join(', ')}`;
+    if (batch.length) title += ` (Batch: ${batch.map(capitalize).join(', ')})`;
+  }
   document.getElementById('results-title').textContent = title;
   updateAnyListUI();
 }
 
 // ── Generate ──────────────────────────────────────────────────
+function setGenerateLoading(loading) {
+  const text = generateBtn.querySelector('.btn-text');
+  const icon = generateBtn.querySelector('.btn-icon');
+  generateBtn.disabled = loading;
+  generateBtn.classList.toggle('is-loading', loading);
+  if (text) text.textContent = loading ? 'Generating…' : 'Generate Meal Plan';
+  if (icon) icon.textContent = loading ? '⟳' : '→';
+}
+
 async function generate() {
   const meals      = getSelectedMeals();
   const batchMeals = getSelectedBatchMeals();
+  const title      = titleInput.value.trim();
   if (!meals.length) { alert('Please select at least one meal type.'); return; }
 
   showPage('plan');
   hide(planEmptyState); hide(errorSection); hide(resultsSection); show(loadingSection);
-  generateBtn.disabled    = true;
+  setGenerateLoading(true);
   loadingText.textContent = LOADING_MSGS[0];
   const msgTimer = cycleLoadingMessages();
 
   try {
     const json = await apiFetch('/api/generate', {
       method: 'POST',
-      body: JSON.stringify({ days:currentDays, meals, notes:notesInput.value, batchMeals }),
+      body: JSON.stringify({ days:currentDays, meals, notes:notesInput.value, batchMeals, title }),
     });
     clearInterval(msgTimer);
     if (!json.success) throw new Error(json.error || 'Unknown error');
     currentPlanData = json.data;
-    await saveToHistory(json.data, { days:currentDays, meals, batch:batchMeals, notes:notesInput.value });
-    renderResults(json.data);
+    await saveToHistory(json.data, { days:currentDays, meals, batch:batchMeals, notes:notesInput.value, title });
+    renderResults(json.data, title);
     hide(loadingSection); show(resultsSection); show(planNavBadge);
+    updateNavLockStates();
   } catch (err) {
     clearInterval(msgTimer);
     hide(loadingSection);
     errorMessage.textContent = err.message || 'Something went wrong. Please try again.';
     show(errorSection);
   } finally {
-    generateBtn.disabled = false;
+    setGenerateLoading(false);
   }
 }
 
@@ -617,10 +743,11 @@ printBtn.addEventListener('click', () => window.print());
 
 // ── Init ──────────────────────────────────────────────────────
 async function init() {
-  updateDays(0);
+  setDays(currentDays);
   await Promise.all([checkAnyListStatus(), loadServerData()]);
   updateAnyListUI();
   renderHistoryPanel();
   renderRecipeBook();
+  updateNavLockStates();
 }
 init();
