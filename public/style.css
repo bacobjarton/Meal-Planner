@@ -413,6 +413,27 @@ body {
 .recipe-details[open] summary::before { transform: rotate(90deg); }
 .recipe-details summary:hover { background: #c5ead0; }
 .recipe-body { padding: 12px; display: flex; flex-direction: column; gap: 10px; background: #fafcfa; }
+
+/* Servings control */
+.servings-control {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 8px 11px; background: var(--green-pale); border: 1px solid var(--green-light);
+  border-radius: var(--radius-sm);
+}
+.servings-control-label {
+  font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--green-dark);
+}
+.servings-stepper {
+  display: flex; align-items: center; background: #fff;
+  border: 1.5px solid var(--green-light); border-radius: 50px; overflow: hidden;
+}
+.srv-btn {
+  background: none; border: none; cursor: pointer; width: 28px; height: 28px;
+  font-size: 1.05rem; font-weight: 700; color: var(--green); line-height: 1; transition: background .15s;
+}
+.srv-btn:hover { background: var(--green-pale); }
+.srv-count { min-width: 28px; text-align: center; font-size: .9rem; font-weight: 700; color: var(--text); }
+.servings-note { font-size: .68rem; color: var(--text-muted); margin-left: auto; white-space: nowrap; }
 .recipe-section-title { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); margin-bottom: 5px; }
 .ingredients-list { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 3px; }
 .ingredients-list li { padding: 3px 0 3px 14px; position: relative; color: var(--text); line-height: 1.4; border-bottom: 1px dotted var(--border); }

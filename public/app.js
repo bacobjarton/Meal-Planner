@@ -119,6 +119,42 @@ const capitalize  = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
 const escHtml     = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const recipeId    = (type, name) => `${type}_${(name||'').toLowerCase().replace(/[^a-z0-9]+/g,'-')}`;
 
+// Parse a leading quantity (int, decimal, fraction "1/2", or mixed "1 1/2") off an ingredient string.
+function parseLeadingQty(str) {
+  const m = /^\s*(\d+\s+\d+\/\d+|\d+\/\d+|\d+(?:\.\d+)?)\s*(.*)$/.exec(String(str));
+  if (!m) return null;
+  const token = m[1].trim();
+  let qty;
+  if (/\s/.test(token)) {                       // mixed "1 1/2"
+    const [whole, frac] = token.split(/\s+/);
+    const [n, d] = frac.split('/').map(Number);
+    qty = Number(whole) + n / d;
+  } else if (token.includes('/')) {             // fraction "1/2"
+    const [n, d] = token.split('/').map(Number);
+    qty = n / d;
+  } else {
+    qty = Number(token);                        // int or decimal
+  }
+  return isFinite(qty) ? { qty, rest: m[2] } : null;
+}
+
+// Format a scaled quantity back to a friendly string with common unicode fractions.
+const NICE_FRACTIONS = [[0.125,'⅛'],[0.25,'¼'],[0.333,'⅓'],[0.375,'⅜'],[0.5,'½'],[0.625,'⅝'],[0.667,'⅔'],[0.75,'¾'],[0.875,'⅞']];
+function formatQty(n) {
+  if (!isFinite(n)) return '';
+  const rounded = Math.round(n * 1000) / 1000;
+  const whole   = Math.floor(rounded + 1e-9);
+  const frac    = rounded - whole;
+  if (frac < 0.04) return String(whole);
+  let glyph = null, bestDiff = 0.04;
+  for (const [val, g] of NICE_FRACTIONS) {
+    const diff = Math.abs(frac - val);
+    if (diff < bestDiff) { glyph = g; bestDiff = diff; }
+  }
+  if (glyph) return whole > 0 ? `${whole}${glyph}` : glyph;
+  return String(Math.round(rounded * 10) / 10);   // fallback: one decimal
+}
+
 const MEAL_ICONS      = { breakfast:'🍳', lunch:'🥙', dinner:'🍽️', snacks:'🍎' };
 const CATEGORY_ICONS  = { produce:'🥦', proteins:'🥩', grains_and_legumes:'🌾', pantry_and_spices:'🫙', frozen:'❄️', other:'🛍️' };
 const CATEGORY_LABELS = { produce:'Produce', proteins:'Proteins', grains_and_legumes:'Grains & Legumes', pantry_and_spices:'Pantry & Spices', frozen:'Frozen', other:'Other' };
@@ -339,7 +375,7 @@ function renderRecipeBook() {
           <button class="btn-remove-recipe" data-recipe-id="${id}" title="Remove">✕</button>
         </div>
       </div>
-      ${renderRecipeDetails(r)}
+      ${renderRecipeDetails(r, true)}
     </div>`;
   }).join('');
 
@@ -525,16 +561,57 @@ function renderMacroPills(macros) {
   </div>`;
 }
 
-function renderRecipeDetails(meal) {
+function renderScalableIngredient(item) {
+  const str    = String(item);
+  const parsed = parseLeadingQty(str);
+  if (!parsed) return `<li>${escHtml(str)}</li>`;
+  return `<li data-base-qty="${parsed.qty}" data-rest="${escHtml(parsed.rest)}">${escHtml(str)}</li>`;
+}
+
+function renderServingsControl(baseServings) {
+  return `<div class="servings-control" data-base="${baseServings}">
+    <span class="servings-control-label">🍽️ Servings</span>
+    <div class="servings-stepper">
+      <button type="button" class="srv-btn" data-delta="-1" aria-label="Fewer servings">−</button>
+      <span class="srv-count">${baseServings}</span>
+      <button type="button" class="srv-btn" data-delta="1" aria-label="More servings">+</button>
+    </div>
+    <span class="servings-note">recipe makes ${baseServings}</span>
+  </div>`;
+}
+
+function renderRecipeDetails(meal, open = false) {
   const ing  = meal.ingredients  || [];
   const inst = meal.instructions || [];
   const bi   = meal.batch_info;
   if (!ing.length && !inst.length && !bi) return '';
-  const ingHtml  = ing.length  ? `<div><div class="recipe-section-title">Ingredients</div><ul class="ingredients-list">${ing.map(i=>`<li>${escHtml(String(i))}</li>`).join('')}</ul></div>` : '';
+  const baseServings = bi && Number(bi.servings) > 0 ? Number(bi.servings) : 1;
+  const servingsHtml = ing.length ? renderServingsControl(baseServings) : '';
+  const ingHtml  = ing.length  ? `<div><div class="recipe-section-title">Ingredients</div><ul class="ingredients-list">${ing.map(renderScalableIngredient).join('')}</ul></div>` : '';
   const instHtml = inst.length ? `<div><div class="recipe-section-title">Instructions</div><ol class="instructions-list">${inst.map(s=>`<li>${escHtml(String(s))}</li>`).join('')}</ol></div>` : '';
   const batchHtml= bi ? `<div class="batch-info-box"><div class="batch-badge">↻ Batch Cook</div>${bi.servings?`<strong>Makes ${bi.servings} servings</strong><br>`:''}${bi.storage?`🧊 ${escHtml(bi.storage)}<br>`:''}${bi.reheat?`🔥 ${escHtml(bi.reheat)}`:''}</div>` : '';
-  return `<details class="recipe-details"><summary>View Recipe</summary><div class="recipe-body">${ingHtml}${instHtml}${batchHtml}</div></details>`;
+  return `<details class="recipe-details"${open?' open':''}><summary>View Recipe</summary><div class="recipe-body">${servingsHtml}${ingHtml}${instHtml}${batchHtml}</div></details>`;
 }
+
+// Servings stepper — scales ingredient quantities in place (works in plan view + recipe book)
+document.addEventListener('click', e => {
+  const btn = e.target.closest('.srv-btn');
+  if (!btn) return;
+  const ctrl    = btn.closest('.servings-control');
+  const details = btn.closest('.recipe-details');
+  if (!ctrl || !details) return;
+  const base    = Number(ctrl.dataset.base) || 1;
+  const countEl = ctrl.querySelector('.srv-count');
+  let cur = (Number(countEl.textContent) || base) + Number(btn.dataset.delta);
+  cur = Math.min(99, Math.max(1, cur));
+  countEl.textContent = cur;
+  const ratio = cur / base;
+  details.querySelectorAll('.ingredients-list li[data-base-qty]').forEach(li => {
+    const q    = Number(li.dataset.baseQty);
+    const rest = li.dataset.rest || '';
+    li.textContent = `${formatQty(q * ratio)} ${rest}`.trim();
+  });
+});
 
 function renderMealCard(type, meal, dayNum) {
   if (!meal) return '';
