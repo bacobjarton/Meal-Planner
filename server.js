@@ -223,8 +223,9 @@ app.post('/api/generate', async (req, res) => {
 
   try {
     const message = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 16000,
+      thinking: { type: 'disabled' },
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: buildPrompt(days, meals, notes, batchMeals || []) }],
     });
@@ -263,8 +264,9 @@ app.post('/api/swap-meal', async (req, res) => {
 
   try {
     const message = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 2000,
+      thinking: { type: 'disabled' },
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: prompt }],
     });
