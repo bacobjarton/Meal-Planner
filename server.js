@@ -221,6 +221,9 @@ app.post('/api/generate', async (req, res) => {
   if (!process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY === 'your_api_key_here')
     return res.status(500).json({ success: false, error: 'API key not configured. Add your ANTHROPIC_API_KEY to the .env file.' });
 
+  const controller = new AbortController();
+  const timeout    = setTimeout(() => controller.abort(), 30_000);
+
   try {
     const message = await client.messages.create({
       model: 'claude-sonnet-4-6',
@@ -228,18 +231,31 @@ app.post('/api/generate', async (req, res) => {
       thinking: { type: 'disabled' },
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: buildPrompt(days, meals, notes, batchMeals || []) }],
-    });
+    }, { signal: controller.signal });
+
+    clearTimeout(timeout);
 
     const raw     = message.content[0].text.trim();
     const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
 
     let data;
-    try   { data = JSON.parse(cleaned); }
-    catch { return res.status(500).json({ success: false, error: 'The AI returned an unexpected format. Please try again.' }); }
+    try {
+      data = JSON.parse(cleaned);
+    } catch (parseErr) {
+      console.error('[/api/generate] JSON parse error — Claude returned unexpected format:', parseErr.message);
+      console.error('[/api/generate] Raw response (first 500 chars):', raw.slice(0, 500));
+      return res.status(500).json({ success: false, error: 'The AI returned an unexpected format. Please try again.' });
+    }
 
     res.json({ success: true, data });
   } catch (err) {
-    const msg = err?.message || 'Unknown error calling the AI API.';
+    clearTimeout(timeout);
+    const isTimeout = err.name === 'AbortError';
+    const msg = isTimeout
+      ? 'Request timed out after 30 seconds. Claude API did not respond in time.'
+      : (err?.message || 'Unknown error calling the AI API.');
+    console.error(`[/api/generate] ${isTimeout ? 'Timeout' : 'API error'}:`, msg);
+    if (!isTimeout && err?.status) console.error('[/api/generate] HTTP status from Anthropic:', err.status);
     res.status(500).json({ success: false, error: msg });
   }
 });
